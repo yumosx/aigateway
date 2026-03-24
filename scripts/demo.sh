@@ -3,7 +3,7 @@ set -e
 
 BASE_URL="${AEGISFLOW_URL:-http://localhost:8080}"
 ADMIN_URL="${AEGISFLOW_ADMIN_URL:-http://localhost:8081}"
-API_KEY="${AEGISFLOW_API_KEY:-aegis-dev-key-001}"
+API_KEY="${AEGISFLOW_API_KEY:-aegis-test-default-001}"
 
 echo "============================================"
 echo "  AegisFlow Demo"

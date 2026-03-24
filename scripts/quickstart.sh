@@ -60,13 +60,13 @@ fi
 echo ""
 echo "curl -X POST http://localhost:8080/v1/chat/completions \\"
 echo "  -H 'Content-Type: application/json' \\"
-echo "  -H 'X-API-Key: aegis-dev-key-001' \\"
+echo "  -H 'X-API-Key: aegis-test-default-001' \\"
 echo "  -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello!\"}]}'"
 echo ""
 
 curl -s -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: aegis-dev-key-001" \
+  -H "X-API-Key: aegis-test-default-001" \
   -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello! What are you?\"}]}" | python3 -c "
 import sys, json
 r = json.loads(sys.stdin.buffer.read(), strict=False)
@@ -81,11 +81,11 @@ echo ""
 echo "  # Chat completion"
 echo "  curl -X POST http://localhost:8080/v1/chat/completions \\"
 echo "    -H 'Content-Type: application/json' \\"
-echo "    -H 'X-API-Key: aegis-dev-key-001' \\"
+echo "    -H 'X-API-Key: aegis-test-default-001' \\"
 echo "    -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Your question here\"}]}'"
 echo ""
 echo "  # List models"
-echo "  curl http://localhost:8080/v1/models -H 'X-API-Key: aegis-dev-key-001'"
+echo "  curl http://localhost:8080/v1/models -H 'X-API-Key: aegis-test-default-001'"
 echo ""
 echo "  # Usage stats"
 echo "  curl http://localhost:8081/admin/v1/usage"

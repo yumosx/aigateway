@@ -15,7 +15,7 @@ from openai import OpenAI
 # Point the standard OpenAI SDK at AegisFlow
 client = OpenAI(
     base_url="http://localhost:8080/v1",
-    api_key="aegis-dev-key-001",  # AegisFlow tenant key
+    api_key="aegis-test-default-001",  # AegisFlow tenant key
 )
 
 
