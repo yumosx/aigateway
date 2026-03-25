@@ -1,6 +1,7 @@
 package admin
 
 import (
+	_ "embed"
 	"encoding/json"
 	"net/http"
 
@@ -10,6 +11,9 @@ import (
 
 	"github.com/aegisflow/aegisflow/internal/usage"
 )
+
+//go:embed dashboard.html
+var dashboardHTML []byte
 
 type Server struct {
 	tracker *usage.Tracker
@@ -26,6 +30,8 @@ func (s *Server) Router() http.Handler {
 	r.Get("/health", s.healthHandler)
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 	r.Get("/admin/v1/usage", s.usageHandler)
+	r.Get("/dashboard", s.dashboardHandler)
+	r.Get("/", s.dashboardHandler)
 
 	return r
 }
@@ -38,4 +44,9 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) usageHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.tracker.GetAllUsage())
+}
+
+func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(dashboardHTML)
 }
