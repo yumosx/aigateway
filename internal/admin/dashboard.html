@@ -108,7 +108,17 @@
   }
   .chart-card .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
   .chart-card .chart-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-  .chart-wrap { position: relative; height: 220px; }
+  .chart-wrap { position: relative; height: 200px; }
+  .custom-legend {
+    display: flex; align-items: center; justify-content: center; gap: 18px;
+    padding-top: 14px; flex-wrap: wrap;
+  }
+  .custom-legend .legend-item {
+    display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); font-weight: 500;
+  }
+  .custom-legend .legend-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
 
   /* Provider status */
   .provider-list { display: flex; flex-direction: column; gap: 10px; }
@@ -269,12 +279,14 @@
         <span class="chart-title">Requests by Model</span>
       </div>
       <div class="chart-wrap"><canvas id="modelChart"></canvas></div>
+      <div class="custom-legend" id="modelLegend"></div>
     </div>
     <div class="chart-card">
       <div class="chart-header">
         <span class="chart-title">Token Distribution</span>
       </div>
       <div class="chart-wrap"><canvas id="tokenChart"></canvas></div>
+      <div class="custom-legend" id="tokenLegend"></div>
     </div>
     <div class="chart-card">
       <div class="chart-header">
@@ -327,21 +339,13 @@ function initCharts() {
   Chart.defaults.color = '#64748b';
   Chart.defaults.borderColor = '#1e293b';
 
-  const legendPlugin = {
-    labels: {
-      padding: 20, font: { size: 11, weight: '500' }, color: '#94a3b8',
-      usePointStyle: true, pointStyle: 'circle', pointStyleWidth: 6,
-      boxWidth: 6, boxHeight: 6
-    }
-  };
-
   modelChart = new Chart(document.getElementById('modelChart'), {
     type: 'doughnut',
     data: { labels: [], datasets: [{ data: [], backgroundColor: CHART_COLORS, borderWidth: 0, hoverOffset: 6 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       cutout: '65%',
-      plugins: { legend: { position: 'bottom', ...legendPlugin } }
+      plugins: { legend: { display: false } }
     }
   });
 
@@ -356,7 +360,7 @@ function initCharts() {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom', ...legendPlugin } },
+      plugins: { legend: { display: false } },
       scales: {
         x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
         y: { stacked: true, grid: { color: '#1e293b40' }, ticks: { font: { size: 11 } } }
@@ -432,10 +436,17 @@ async function fetchUsage() {
     prevTimestamp = now;
 
     // Model chart
-    modelChart.data.labels = Object.keys(modelMap);
+    const modelLabels = Object.keys(modelMap);
+    const modelColors = CHART_COLORS.slice(0, modelLabels.length);
+    modelChart.data.labels = modelLabels;
     modelChart.data.datasets[0].data = Object.values(modelMap);
-    modelChart.data.datasets[0].backgroundColor = CHART_COLORS.slice(0, Object.keys(modelMap).length);
+    modelChart.data.datasets[0].backgroundColor = modelColors;
     modelChart.update('none');
+
+    // Model legend (HTML)
+    document.getElementById('modelLegend').innerHTML = modelLabels.map((label, i) =>
+      `<div class="legend-item"><div class="legend-dot" style="background:${modelColors[i]}"></div>${label}</div>`
+    ).join('');
 
     // Token chart (stacked bar per tenant)
     const tenantLabels = Object.keys(tenantData);
@@ -443,6 +454,11 @@ async function fetchUsage() {
     tokenChart.data.datasets[0].data = tenantLabels.map(t => tenantData[t].prompt);
     tokenChart.data.datasets[1].data = tenantLabels.map(t => tenantData[t].completion);
     tokenChart.update('none');
+
+    // Token legend (HTML)
+    document.getElementById('tokenLegend').innerHTML =
+      `<div class="legend-item"><div class="legend-dot" style="background:${COLORS.blue}"></div>Prompt</div>` +
+      `<div class="legend-item"><div class="legend-dot" style="background:${COLORS.purple}"></div>Completion</div>`;
 
     // Provider list
     const providerList = document.getElementById('providerList');
