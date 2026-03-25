@@ -18,10 +18,12 @@
 
 ---
 
-[![CI](https://github.com/aegisflow/aegisflow/actions/workflows/ci.yaml/badge.svg)](https://github.com/aegisflow/aegisflow/actions/workflows/ci.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/aegisflow/aegisflow)](https://goreportcard.com/report/github.com/aegisflow/aegisflow)
+[![CI](https://github.com/saivedant169/AegisFlow/actions/workflows/ci.yaml/badge.svg)](https://github.com/saivedant169/AegisFlow/actions/workflows/ci.yaml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/aegisflow/aegisflow)](go.mod)
+
+<p align="center">
+  <img src="demo.gif" alt="AegisFlow Demo" width="800">
+</p>
 
 ## What is AegisFlow?
 
