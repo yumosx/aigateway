@@ -7,11 +7,15 @@ import (
 	"net/http"
 	"strings"
 
+	"context"
+	"time"
+
 	"github.com/aegisflow/aegisflow/internal/cache"
 	"github.com/aegisflow/aegisflow/internal/middleware"
 	"github.com/aegisflow/aegisflow/internal/policy"
 	"github.com/aegisflow/aegisflow/internal/provider"
 	"github.com/aegisflow/aegisflow/internal/router"
+	"github.com/aegisflow/aegisflow/internal/storage"
 	"github.com/aegisflow/aegisflow/internal/usage"
 	"github.com/aegisflow/aegisflow/internal/webhook"
 	"github.com/aegisflow/aegisflow/pkg/types"
@@ -24,13 +28,15 @@ type Handler struct {
 	usage    *usage.Tracker
 	cache    cache.Cache
 	webhook  *webhook.Notifier
+	store    *storage.PostgresStore
 }
 
-func NewHandler(registry *provider.Registry, rt *router.Router, pe *policy.Engine, ut *usage.Tracker, c cache.Cache, wh *webhook.Notifier) *Handler {
-	return &Handler{registry: registry, router: rt, policy: pe, usage: ut, cache: c, webhook: wh}
+func NewHandler(registry *provider.Registry, rt *router.Router, pe *policy.Engine, ut *usage.Tracker, c cache.Cache, wh *webhook.Notifier, store *storage.PostgresStore) *Handler {
+	return &Handler{registry: registry, router: rt, policy: pe, usage: ut, cache: c, webhook: wh, store: store}
 }
 
 func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 	var req types.ChatCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "failed to parse request body")
@@ -109,6 +115,16 @@ func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
 	// Track usage
 	if h.usage != nil {
 		h.usage.Record(tenantID, req.Model, resp.Usage)
+	}
+
+	// Persist to database (use background context since request context will be cancelled)
+	if h.store != nil {
+		go h.store.RecordEvent(context.Background(), storage.UsageEvent{
+			TenantID: tenantID, Model: req.Model,
+			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens: resp.Usage.TotalTokens, StatusCode: 200,
+			LatencyMs: time.Since(startTime).Milliseconds(), CreatedAt: time.Now(),
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
