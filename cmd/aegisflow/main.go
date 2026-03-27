@@ -25,6 +25,7 @@ import (
 	"github.com/aegisflow/aegisflow/internal/policy"
 	"github.com/aegisflow/aegisflow/internal/provider"
 	"github.com/aegisflow/aegisflow/internal/ratelimit"
+	"github.com/aegisflow/aegisflow/internal/rollout"
 	"github.com/aegisflow/aegisflow/internal/router"
 	"github.com/aegisflow/aegisflow/internal/storage"
 	"github.com/aegisflow/aegisflow/internal/telemetry"
@@ -142,8 +143,25 @@ func main() {
 	// Request log for live feed
 	reqLog := admin.NewRequestLog(200)
 
+	// Rollout manager
+	var rolloutAdapter admin.RolloutManager
+	var rolloutStore rollout.Store = rollout.NewMemoryStore()
+	if pgStore != nil {
+		rolloutStore = rollout.NewPostgresStore(pgStore.DB())
+	}
+	rolloutMgr, err := rollout.NewManager(rolloutStore, reqLog)
+	if err != nil {
+		log.Printf("rollout manager init failed: %v", err)
+	} else {
+		rt.SetRolloutManager(rolloutMgr)
+		rolloutAdapter = rollout.NewAdminAdapter(rolloutMgr)
+		rolloutMgr.Start()
+		defer rolloutMgr.Stop()
+		log.Printf("rollout manager started")
+	}
+
 	// Admin server
-	adminSvr := admin.NewServer(ut, cfg, registry, reqLog, responseCache, nil)
+	adminSvr := admin.NewServer(ut, cfg, registry, reqLog, responseCache, rolloutAdapter)
 
 	gatewayAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	adminAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.AdminPort)

@@ -187,6 +187,12 @@ func (s *PostgresStore) GetRecentEvents(ctx context.Context, limit int) ([]Usage
 	return events, rows.Err()
 }
 
+// DB returns the underlying *sql.DB connection for use by other subsystems
+// (e.g. rollout store) that need direct database access.
+func (s *PostgresStore) DB() *sql.DB {
+	return s.db
+}
+
 func (s *PostgresStore) Close() error {
 	return s.db.Close()
 }
