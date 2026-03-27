@@ -537,7 +537,7 @@ Every request produces a trace span with:
 
 ## Roadmap
 
-### Phase 1 (MVP) -- current
+### Phase 1 (MVP)
 - [x] Unified gateway with OpenAI-compatible API
 - [x] Provider adapters: Mock, OpenAI, Anthropic, Ollama
 - [x] Intelligent routing with fallback and retry
@@ -547,11 +547,11 @@ Every request produces a trace span with:
 - [x] Usage tracking
 - [x] Docker Compose deployment
 
-### Phase 2
+### Phase 2 (complete)
 - [x] Streaming policy checks (real-time output filtering)
 - [x] Response caching
-- [ ] Persistent usage storage (PostgreSQL)
-- [ ] Admin dashboard (web UI)
+- [x] Persistent usage storage (PostgreSQL)
+- [x] Admin dashboard (web UI with live request feed)
 - [x] Webhook notifications for policy violations
 - [x] Custom policy plugins (WASM support via wazero)
 
