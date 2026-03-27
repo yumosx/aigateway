@@ -286,6 +286,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
       Cache
     </div>
+    <div class="nav-item" data-page="rollouts" onclick="switchPage('rollouts')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      Rollouts
+    </div>
     <div class="nav-section">Configuration</div>
     <div class="nav-item" data-page="providers" onclick="switchPage('providers')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>
@@ -608,6 +612,57 @@
     </div>
   </div>
 
+  <!-- PAGE: Rollouts -->
+  <div class="page" id="page-rollouts" style="display:none;">
+    <div class="topbar">
+      <h2>Canary Rollouts</h2>
+      <div class="refresh-info">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        Auto-refresh 3s
+      </div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+      <div class="stat-card">
+        <div class="stat-glow green"></div>
+        <div class="stat-label">Active Rollouts</div>
+        <div class="stat-value" id="rolloutActive">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow blue"></div>
+        <div class="stat-label">Completed This Week</div>
+        <div class="stat-value" id="rolloutCompletedWeek">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow orange"></div>
+        <div class="stat-label">Rolled Back This Week</div>
+        <div class="stat-value" id="rolloutRolledBackWeek">0</div>
+      </div>
+    </div>
+    <div id="rolloutActiveCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;margin-bottom:28px;"></div>
+    <div class="table-card">
+      <div class="table-header">
+        <span class="table-title">Rollout History</span>
+        <span class="table-count" id="rolloutHistoryCount">0 entries</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Route</th>
+            <th>Canary Provider</th>
+            <th>State</th>
+            <th>Final %</th>
+            <th>Error Rate</th>
+            <th>P95 Latency</th>
+            <th>Completed</th>
+          </tr>
+        </thead>
+        <tbody id="rolloutHistoryTable">
+          <tr><td colspan="7" class="empty-state"><p>No rollout history yet</p><div class="hint">Completed and rolled-back rollouts will appear here</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div><!-- end main -->
 
 <script>
@@ -818,6 +873,7 @@ function switchPage(page) {
   if (page === 'requests') fetchRequests();
   if (page === 'cache') fetchCache();
   if (page === 'violations') fetchViolations();
+  if (page === 'rollouts') fetchRollouts();
 }
 
 async function fetchPolicies() {
@@ -1082,6 +1138,130 @@ async function fetchRequests() {
     }
   } catch (err) { console.error('Failed to fetch requests', err); }
 }
+
+async function fetchRollouts() {
+  try {
+    const resp = await fetch('/admin/v1/rollouts');
+    const data = await resp.json();
+    const rollouts = data || [];
+
+    const activeStates = ['running', 'paused', 'pending'];
+    const active = rollouts.filter(r => activeStates.includes(r.state));
+    const history = rollouts.filter(r => r.state === 'completed' || r.state === 'rolled_back');
+
+    // Stats
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const completedWeek = history.filter(r => r.state === 'completed' && new Date(r.updated_at) >= weekAgo).length;
+    const rolledBackWeek = history.filter(r => r.state === 'rolled_back' && new Date(r.updated_at) >= weekAgo).length;
+
+    document.getElementById('rolloutActive').textContent = active.length;
+    document.getElementById('rolloutCompletedWeek').textContent = completedWeek;
+    document.getElementById('rolloutRolledBackWeek').textContent = rolledBackWeek;
+
+    // Active rollout cards
+    const cardsEl = document.getElementById('rolloutActiveCards');
+    if (active.length === 0) {
+      cardsEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><p>No active rollouts</p><div class="hint">Start a canary rollout via the API</div></div>';
+    } else {
+      cardsEl.innerHTML = active.map(r => {
+        const stages = r.stages || [];
+        const currentStage = r.current_stage || 0;
+        const totalStages = stages.length || 1;
+        const progressPct = Math.round((currentStage / totalStages) * 100);
+        const currentPct = stages.length > 0 && currentStage > 0 ? stages[currentStage - 1].percentage : 0;
+        const baselineErr = r.baseline_error_rate != null ? (r.baseline_error_rate * 100).toFixed(2) + '%' : '--';
+        const canaryErr = r.canary_error_rate != null ? (r.canary_error_rate * 100).toFixed(2) + '%' : '--';
+        const baselineP95 = r.baseline_p95_ms != null ? r.baseline_p95_ms.toFixed(0) + 'ms' : '--';
+        const canaryP95 = r.canary_p95_ms != null ? r.canary_p95_ms.toFixed(0) + 'ms' : '--';
+        const stateColor = r.state === 'running' ? 'var(--accent-green)' : r.state === 'paused' ? 'var(--accent-orange)' : 'var(--accent-blue)';
+        const stateBg = r.state === 'running' ? '#22c55e18' : r.state === 'paused' ? '#f59e0b18' : '#3b82f618';
+
+        return `<div class="stat-card" style="padding:24px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <div>
+              <div style="font-size:16px;font-weight:700;">${r.route_model || r.id}</div>
+              <div style="font-size:11px;color:var(--text-muted);">Canary: <span style="color:var(--accent-cyan);font-weight:600;">${r.canary_provider || '--'}</span></div>
+            </div>
+            <span class="badge" style="background:${stateBg};color:${stateColor};font-weight:600;text-transform:uppercase;">${r.state}</span>
+          </div>
+          <div style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-size:11px;color:var(--text-muted);">Stage ${currentStage} / ${totalStages}</span>
+              <span style="font-size:11px;color:var(--text-muted);">${progressPct}%</span>
+            </div>
+            <div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;">
+              <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,var(--accent-blue),var(--accent-cyan));border-radius:4px;transition:width 0.6s cubic-bezier(0.2,0,0,1);"></div>
+            </div>
+          </div>
+          <div style="text-align:center;margin-bottom:16px;">
+            <div style="font-size:42px;font-weight:800;letter-spacing:-2px;color:var(--accent-cyan);font-variant-numeric:tabular-nums;">${currentPct}%</div>
+            <div style="font-size:11px;color:var(--text-muted);">Current canary traffic</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div style="background:var(--bg-primary);padding:12px;border-radius:8px;">
+              <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Error Rate</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                <div><span style="font-size:10px;color:var(--text-muted);">Base</span> <span style="font-size:13px;font-weight:600;">${baselineErr}</span></div>
+                <div><span style="font-size:10px;color:var(--text-muted);">Canary</span> <span style="font-size:13px;font-weight:600;color:var(--accent-cyan);">${canaryErr}</span></div>
+              </div>
+            </div>
+            <div style="background:var(--bg-primary);padding:12px;border-radius:8px;">
+              <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">P95 Latency</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                <div><span style="font-size:10px;color:var(--text-muted);">Base</span> <span style="font-size:13px;font-weight:600;">${baselineP95}</span></div>
+                <div><span style="font-size:10px;color:var(--text-muted);">Canary</span> <span style="font-size:13px;font-weight:600;color:var(--accent-cyan);">${canaryP95}</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button onclick="rolloutAction('${r.id}','pause')" style="flex:1;padding:8px;border:1px solid var(--accent-orange);background:rgba(245,158,11,0.08);color:var(--accent-orange);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.15s;">Pause</button>
+            <button onclick="rolloutAction('${r.id}','rollback')" style="flex:1;padding:8px;border:1px solid var(--accent-red);background:rgba(239,68,68,0.08);color:var(--accent-red);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.15s;">Rollback</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // History table
+    const tbody = document.getElementById('rolloutHistoryTable');
+    document.getElementById('rolloutHistoryCount').textContent = history.length + ' entries';
+    if (history.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><p>No rollout history yet</p></td></tr>';
+    } else {
+      tbody.innerHTML = history.map(r => {
+        const stateColor = r.state === 'completed' ? 'var(--accent-green)' : 'var(--accent-red)';
+        const stateBg = r.state === 'completed' ? '#22c55e18' : '#ef444418';
+        const stageInfo = r.stages || [];
+        const finalPct = stageInfo.length > 0 ? stageInfo[stageInfo.length - 1].percentage + '%' : '--';
+        const errRate = r.canary_error_rate != null ? (r.canary_error_rate * 100).toFixed(2) + '%' : '--';
+        const p95 = r.canary_p95_ms != null ? r.canary_p95_ms.toFixed(0) + 'ms' : '--';
+        const completedAt = r.updated_at ? new Date(r.updated_at).toLocaleDateString() : '--';
+        return `<tr>
+          <td style="font-weight:600;">${r.route_model || r.id}</td>
+          <td><span class="badge badge-ollama">${r.canary_provider || '--'}</span></td>
+          <td><span class="badge" style="background:${stateBg};color:${stateColor};font-weight:600;text-transform:uppercase;">${r.state.replace('_', ' ')}</span></td>
+          <td style="font-weight:600;">${finalPct}</td>
+          <td>${errRate}</td>
+          <td>${p95}</td>
+          <td style="font-size:12px;color:var(--text-muted);">${completedAt}</td>
+        </tr>`;
+      }).join('');
+    }
+  } catch (err) { console.error('Failed to fetch rollouts', err); }
+}
+
+async function rolloutAction(id, action) {
+  try {
+    await fetch('/admin/v1/rollouts/' + id + '/' + action, { method: 'POST' });
+    fetchRollouts();
+  } catch (err) { console.error('Rollout action failed', err); }
+}
+
+// Auto-refresh rollouts when on rollouts page
+setInterval(() => {
+  const rolloutPage = document.getElementById('page-rollouts');
+  if (rolloutPage && rolloutPage.style.display !== 'none') fetchRollouts();
+}, 3000);
 
 initCharts();
 fetchUsage();
