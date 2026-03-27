@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"os"
 	"time"
@@ -209,12 +211,17 @@ func setDefaults(cfg *Config) {
 }
 
 func (c *Config) FindTenantByAPIKey(apiKey string) *TenantConfig {
+	// Use constant-time comparison to prevent timing attacks.
+	// Hash both sides so length differences don't leak info.
+	inputHash := sha256.Sum256([]byte(apiKey))
+	var match *TenantConfig
 	for i := range c.Tenants {
 		for _, key := range c.Tenants[i].APIKeys {
-			if key == apiKey {
-				return &c.Tenants[i]
+			keyHash := sha256.Sum256([]byte(key))
+			if subtle.ConstantTimeCompare(inputHash[:], keyHash[:]) == 1 {
+				match = &c.Tenants[i]
 			}
 		}
 	}
-	return nil
+	return match
 }

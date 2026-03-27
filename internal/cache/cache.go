@@ -17,9 +17,11 @@ type Cache interface {
 	Set(key string, resp *types.ChatCompletionResponse)
 }
 
-// BuildKey creates a deterministic cache key from model + messages.
-func BuildKey(model string, messages []types.Message) string {
+// BuildKey creates a deterministic cache key from tenant + model + messages.
+func BuildKey(tenantID string, model string, messages []types.Message) string {
 	h := sha256.New()
+	h.Write([]byte(tenantID))
+	h.Write([]byte{0}) // separator to prevent collisions
 	h.Write([]byte(model))
 	for _, m := range messages {
 		h.Write([]byte(m.Role))

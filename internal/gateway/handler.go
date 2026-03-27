@@ -37,8 +37,9 @@ func NewHandler(registry *provider.Registry, rt *router.Router, pe *policy.Engin
 
 func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
+	const maxBodySize = 10 * 1024 * 1024 // 10MB
 	var req types.ChatCompletionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBodySize)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "failed to parse request body")
 		return
 	}
@@ -78,7 +79,7 @@ func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
 
 	// Check cache (non-streaming only)
 	if h.cache != nil {
-		cacheKey := cache.BuildKey(req.Model, req.Messages)
+		cacheKey := cache.BuildKey(tenantID, req.Model, req.Messages)
 		if cached, ok := h.cache.Get(cacheKey); ok {
 			log.Printf("cache hit: %s", cacheKey[:20])
 			w.Header().Set("Content-Type", "application/json")
@@ -108,7 +109,7 @@ func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
 
 	// Cache the response
 	if h.cache != nil {
-		cacheKey := cache.BuildKey(req.Model, req.Messages)
+		cacheKey := cache.BuildKey(tenantID, req.Model, req.Messages)
 		h.cache.Set(cacheKey, resp)
 	}
 
@@ -175,8 +176,13 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, req *type
 						if v.Action == policy.ActionBlock {
 							h.fireWebhook("stream_policy_violation", v.PolicyName, string(v.Action), tenantID, req.Model, v.Message)
 							// Send error event in SSE format to terminate stream
-							errChunk := `data: {"error":"policy_violation","message":"` + v.Message + `"}` + "\n\n"
-							w.Write([]byte(errChunk))
+							errPayload, _ := json.Marshal(map[string]string{
+								"error":   "policy_violation",
+								"message": v.Message,
+							})
+							w.Write([]byte("data: "))
+							w.Write(errPayload)
+							w.Write([]byte("\n\n"))
 							flusher.Flush()
 							log.Printf("stream terminated: %s", policy.FormatViolation(v))
 							return

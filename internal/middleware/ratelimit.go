@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/aegisflow/aegisflow/internal/ratelimit"
@@ -24,7 +25,10 @@ func RateLimit(limiter ratelimit.Limiter) func(http.Handler) http.Handler {
 
 			allowed, err := limiter.Allow(tenant.ID, 1)
 			if err != nil {
-				next.ServeHTTP(w, r)
+				log.Printf("rate limiter error (denying request): %v", err)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				json.NewEncoder(w).Encode(types.NewErrorResponse(503, "service_error", "rate limiter unavailable — try again later"))
 				return
 			}
 

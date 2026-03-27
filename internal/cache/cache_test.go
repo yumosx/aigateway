@@ -10,15 +10,19 @@ import (
 func TestBuildKey(t *testing.T) {
 	msgs := []types.Message{{Role: "user", Content: "hello"}}
 
-	key1 := BuildKey("gpt-4o", msgs)
-	key2 := BuildKey("gpt-4o", msgs)
-	key3 := BuildKey("gpt-4o-mini", msgs)
+	key1 := BuildKey("tenant-a", "gpt-4o", msgs)
+	key2 := BuildKey("tenant-a", "gpt-4o", msgs)
+	key3 := BuildKey("tenant-a", "gpt-4o-mini", msgs)
+	key4 := BuildKey("tenant-b", "gpt-4o", msgs)
 
 	if key1 != key2 {
 		t.Error("same input should produce same key")
 	}
 	if key1 == key3 {
 		t.Error("different model should produce different key")
+	}
+	if key1 == key4 {
+		t.Error("different tenant should produce different key")
 	}
 	if len(key1) == 0 {
 		t.Error("key should not be empty")
