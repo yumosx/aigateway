@@ -112,6 +112,12 @@ Latency (p50): 1.1ms | (p95): 4.2ms | (p99): 7.3ms
 - Per-policy actions: `block`, `warn`, or `log`
 - Extensible filter interface for custom policies
 
+### WASM Policy Plugins
+- Custom policy filters in any WASM-compatible language (Go, Rust, TinyGo, AssemblyScript)
+- Sandboxed execution via wazero runtime (pure Go, no CGo)
+- Configurable per-plugin timeout and error handling (`on_error: block/allow`)
+- Example plugin with ABI documentation included
+
 ### Observability
 - OpenTelemetry traces with per-request spans (provider, model, latency, tokens, status)
 - Prometheus metrics endpoint (`/metrics`)
@@ -542,11 +548,12 @@ Every request produces a trace span with:
 - [x] Docker Compose deployment
 
 ### Phase 2
-- [ ] Streaming policy checks (real-time output filtering)
+- [x] Streaming policy checks (real-time output filtering)
+- [x] Response caching
 - [ ] Persistent usage storage (PostgreSQL)
 - [ ] Admin dashboard (web UI)
-- [ ] Webhook notifications for policy violations
-- [ ] Custom policy plugins (WASM or Go plugins)
+- [x] Webhook notifications for policy violations
+- [x] Custom policy plugins (WASM support via wazero)
 
 ### Phase 3
 - [ ] Kubernetes operator with CRDs
