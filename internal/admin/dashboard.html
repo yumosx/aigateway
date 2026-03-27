@@ -1084,12 +1084,28 @@ async function fetchPolicies() {
 
     document.getElementById('policiesTable').innerHTML = data.map(p => {
       const rules = (p.keywords || []).concat(p.patterns || []);
+      const maxShow = 3;
+      let rulesHTML = '';
+      if (rules.length === 0) {
+        rulesHTML = '<span style="opacity:0.4;">none</span>';
+      } else {
+        const visible = rules.slice(0, maxShow);
+        const remaining = rules.length - maxShow;
+        const ruleId = 'rules-' + p.name.replace(/[^a-z0-9]/gi, '-');
+        rulesHTML = `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">` +
+          visible.map(r => `<code style="background:var(--bg-elevated, var(--border));padding:2px 8px;border-radius:4px;font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-secondary);white-space:nowrap;">${r}</code>`).join('') +
+          (remaining > 0 ? `<span id="${ruleId}-toggle" onclick="document.getElementById('${ruleId}').style.display=document.getElementById('${ruleId}').style.display==='none'?'flex':'none';this.textContent=this.textContent.includes('+')?'show less':'+${remaining} more'" style="cursor:pointer;font-size:11px;color:var(--accent-blue);font-weight:500;padding:2px 8px;background:rgba(88,166,255,0.08);border-radius:4px;">+${remaining} more</span>` +
+            `<div id="${ruleId}" style="display:none;flex-wrap:wrap;gap:4px;width:100%;margin-top:4px;">` +
+            rules.slice(maxShow).map(r => `<code style="background:var(--bg-elevated, var(--border));padding:2px 8px;border-radius:4px;font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-secondary);white-space:nowrap;">${r}</code>`).join('') +
+            `</div>` : '') +
+          `</div>`;
+      }
       return `<tr>
         <td style="font-weight:600;">${p.name}</td>
         <td><span class="badge" style="background:${phaseColors[p.phase]}18;color:${phaseColors[p.phase]}">${p.type}</span></td>
         <td><span class="badge" style="background:${phaseColors[p.phase]}18;color:${phaseColors[p.phase]}">${p.phase}</span></td>
         <td><span class="badge" style="background:${actionColors[p.action]}18;color:${actionColors[p.action]};font-weight:600;">${p.action.toUpperCase()}</span></td>
-        <td style="font-size:12px;color:var(--text-muted);">${rules.length > 0 ? rules.map(r => '<code style="background:var(--border);padding:1px 6px;border-radius:3px;font-size:11px;">' + r + '</code>').join(' ') : '<span style="opacity:0.5;">none</span>'}</td>
+        <td style="max-width:500px;">${rulesHTML}</td>
       </tr>`;
     }).join('');
   } catch (err) { console.error('Failed to fetch policies', err); }
