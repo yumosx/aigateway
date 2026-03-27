@@ -555,12 +555,13 @@ Every request produces a trace span with:
 - [x] Webhook notifications for policy violations
 - [x] Custom policy plugins (WASM support via wazero)
 
-### Phase 3
-- [ ] Kubernetes operator with CRDs
-- [ ] Multi-region routing
-- [ ] A/B testing and canary deployments for models
-- [ ] Advanced analytics and anomaly detection
-- [ ] Cost forecasting and budget alerts
+### Phase 3 (complete)
+- [x] A/B testing and canary deployments with auto-promotion/rollback
+- [x] Advanced analytics with real-time time-series collector (48h retention)
+- [x] Anomaly detection (static thresholds + statistical baseline)
+- [x] Cost forecasting and budget alerts (global, per-tenant, per-model)
+- [x] Multi-region routing with per-region strategy and cross-region fallback
+- [x] Kubernetes operator with CRDs and status reporting
 
 ### Phase 4
 - [ ] Multi-cluster federation
