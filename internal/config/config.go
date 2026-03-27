@@ -26,6 +26,7 @@ type Config struct {
 	Aliases   AliasConfig     `yaml:"aliases"`
 	Transform TransformConfig `yaml:"transform"`
 	Analytics AnalyticsConfig `yaml:"analytics"`
+	Budgets   BudgetsConfig   `yaml:"budgets"`
 }
 
 type CacheConfig struct {
@@ -83,6 +84,27 @@ type StaticThresholds struct {
 type BaselineConfig struct {
 	Window          time.Duration `yaml:"window"`
 	StddevThreshold float64       `yaml:"stddev_threshold"`
+}
+
+type BudgetsConfig struct {
+	Enabled bool                    `yaml:"enabled"`
+	Global  BudgetLimitConfig       `yaml:"global"`
+	Tenants map[string]TenantBudget `yaml:"tenants"`
+}
+
+type BudgetLimitConfig struct {
+	Monthly float64 `yaml:"monthly"`
+	Daily   float64 `yaml:"daily"`
+	AlertAt int     `yaml:"alert_at"`
+	WarnAt  int     `yaml:"warn_at"`
+}
+
+type TenantBudget struct {
+	Monthly float64                      `yaml:"monthly"`
+	Daily   float64                      `yaml:"daily"`
+	AlertAt int                          `yaml:"alert_at"`
+	WarnAt  int                          `yaml:"warn_at"`
+	Models  map[string]BudgetLimitConfig `yaml:"models"`
 }
 
 type ServerConfig struct {
@@ -273,6 +295,12 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Analytics.AnomalyDetection.Baseline.StddevThreshold == 0 {
 		cfg.Analytics.AnomalyDetection.Baseline.StddevThreshold = 3
+	}
+	if cfg.Budgets.Global.AlertAt == 0 {
+		cfg.Budgets.Global.AlertAt = 80
+	}
+	if cfg.Budgets.Global.WarnAt == 0 {
+		cfg.Budgets.Global.WarnAt = 90
 	}
 }
 
