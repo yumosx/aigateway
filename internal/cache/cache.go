@@ -12,9 +12,18 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+type CacheStats struct {
+	Hits      int64 `json:"hits"`
+	Misses    int64 `json:"misses"`
+	Size      int   `json:"size"`
+	MaxSize   int   `json:"max_size"`
+	Evictions int64 `json:"evictions"`
+}
+
 type Cache interface {
 	Get(key string) (*types.ChatCompletionResponse, bool)
 	Set(key string, resp *types.ChatCompletionResponse)
+	Stats() CacheStats
 }
 
 // BuildKey creates a deterministic cache key from tenant + model + messages.
@@ -32,10 +41,13 @@ func BuildKey(tenantID string, model string, messages []types.Message) string {
 
 // MemoryCache is an in-memory LRU-style cache with TTL.
 type MemoryCache struct {
-	mu      sync.RWMutex
-	entries map[string]*cacheEntry
-	ttl     time.Duration
-	maxSize int
+	mu        sync.RWMutex
+	entries   map[string]*cacheEntry
+	ttl       time.Duration
+	maxSize   int
+	hits      int64
+	misses    int64
+	evictions int64
 }
 
 type cacheEntry struct {
@@ -52,16 +64,19 @@ func NewMemoryCache(ttl time.Duration, maxSize int) *MemoryCache {
 }
 
 func (c *MemoryCache) Get(key string) (*types.ChatCompletionResponse, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	entry, ok := c.entries[key]
 	if !ok {
+		c.misses++
 		return nil, false
 	}
 	if time.Now().After(entry.expiresAt) {
+		c.misses++
 		return nil, false
 	}
+	c.hits++
 	return entry.resp, true
 }
 
@@ -75,6 +90,7 @@ func (c *MemoryCache) Set(key string, resp *types.ChatCompletionResponse) {
 		for k, v := range c.entries {
 			if now.After(v.expiresAt) {
 				delete(c.entries, k)
+				c.evictions++
 			}
 		}
 	}
@@ -90,11 +106,24 @@ func (c *MemoryCache) Set(key string, resp *types.ChatCompletionResponse) {
 			}
 		}
 		delete(c.entries, oldestKey)
+		c.evictions++
 	}
 
 	c.entries[key] = &cacheEntry{
 		resp:      resp,
 		expiresAt: time.Now().Add(c.ttl),
+	}
+}
+
+func (c *MemoryCache) Stats() CacheStats {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return CacheStats{
+		Hits:      c.hits,
+		Misses:    c.misses,
+		Size:      len(c.entries),
+		MaxSize:   c.maxSize,
+		Evictions: c.evictions,
 	}
 }
 
@@ -146,4 +175,11 @@ func (c *RedisCache) Set(key string, resp *types.ChatCompletionResponse) {
 		return
 	}
 	c.client.Set(ctx, key, data, c.ttl)
+}
+
+func (c *RedisCache) Stats() CacheStats {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	size, _ := c.client.DBSize(ctx).Result()
+	return CacheStats{Size: int(size)}
 }

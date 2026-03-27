@@ -141,7 +141,7 @@ func main() {
 	reqLog := admin.NewRequestLog(200)
 
 	// Admin server
-	adminSvr := admin.NewServer(ut, cfg, registry, reqLog)
+	adminSvr := admin.NewServer(ut, cfg, registry, reqLog, responseCache)
 
 	gatewayAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	adminAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.AdminPort)

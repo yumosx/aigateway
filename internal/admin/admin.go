@@ -9,6 +9,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/aegisflow/aegisflow/internal/cache"
 	"github.com/aegisflow/aegisflow/internal/config"
 	"github.com/aegisflow/aegisflow/internal/provider"
 	"github.com/aegisflow/aegisflow/internal/usage"
@@ -22,10 +23,11 @@ type Server struct {
 	cfg        *config.Config
 	registry   *provider.Registry
 	requestLog *RequestLog
+	cache      cache.Cache
 }
 
-func NewServer(tracker *usage.Tracker, cfg *config.Config, registry *provider.Registry, reqLog *RequestLog) *Server {
-	return &Server{tracker: tracker, cfg: cfg, registry: registry, requestLog: reqLog}
+func NewServer(tracker *usage.Tracker, cfg *config.Config, registry *provider.Registry, reqLog *RequestLog, c cache.Cache) *Server {
+	return &Server{tracker: tracker, cfg: cfg, registry: registry, requestLog: reqLog, cache: c}
 }
 
 func (s *Server) Router() http.Handler {
@@ -39,6 +41,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/admin/v1/tenants", s.tenantsHandler)
 	r.Get("/admin/v1/policies", s.policiesHandler)
 	r.Get("/admin/v1/requests", s.requestLog.ServeHTTP)
+	r.Get("/admin/v1/cache", s.cacheHandler)
 	r.Get("/dashboard", s.dashboardHandler)
 	r.Get("/", s.dashboardHandler)
 
@@ -143,6 +146,15 @@ func (s *Server) policiesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(policies)
+}
+
+func (s *Server) cacheHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.cache != nil {
+		json.NewEncoder(w).Encode(s.cache.Stats())
+	} else {
+		json.NewEncoder(w).Encode(cache.CacheStats{})
+	}
 }
 
 func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {

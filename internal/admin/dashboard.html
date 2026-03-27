@@ -202,6 +202,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Live Feed
     </div>
+    <div class="nav-item" data-page="cache" onclick="switchPage('cache')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+      Cache
+    </div>
     <div class="nav-section">Configuration</div>
     <div class="nav-item" data-page="providers" onclick="switchPage('providers')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>
@@ -374,6 +378,48 @@
   <div class="page" id="page-tenants" style="display:none;">
     <div class="topbar"><h2>Tenants</h2></div>
     <div id="tenantCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:24px;"></div>
+  </div>
+
+  <!-- PAGE: Cache Stats -->
+  <div class="page" id="page-cache" style="display:none;">
+    <div class="topbar">
+      <h2>Response Cache</h2>
+      <div class="refresh-info">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Auto-refresh 3s
+      </div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 20px;">
+      <div class="stat-card">
+        <div class="stat-glow green"></div>
+        <div class="stat-label">Hits</div>
+        <div class="stat-value" id="cacheHits">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow orange"></div>
+        <div class="stat-label">Misses</div>
+        <div class="stat-value" id="cacheMisses">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow blue"></div>
+        <div class="stat-label">Hit Rate</div>
+        <div class="stat-value" id="cacheHitRate">0%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow purple"></div>
+        <div class="stat-label">Size / Max</div>
+        <div class="stat-value" id="cacheSize">0 / 0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow orange"></div>
+        <div class="stat-label">Evictions</div>
+        <div class="stat-value" id="cacheEvictions">0</div>
+      </div>
+    </div>
+    <div class="chart-card" style="margin-bottom:24px;">
+      <div class="chart-header"><span class="chart-title">Hit Rate Over Time</span></div>
+      <div class="chart-wrap"><canvas id="cacheChart"></canvas></div>
+    </div>
   </div>
 
   <!-- PAGE: Live Request Feed -->
@@ -639,6 +685,7 @@ function switchPage(page) {
   if (page === 'providers') fetchProviders();
   if (page === 'tenants') fetchTenants();
   if (page === 'requests') fetchRequests();
+  if (page === 'cache') fetchCache();
 }
 
 async function fetchPolicies() {
@@ -752,6 +799,67 @@ async function fetchTenants() {
     }).join('');
   } catch (err) { console.error('Failed to fetch tenants', err); }
 }
+
+let cacheChart2 = null;
+const cacheHistory = { labels: [], hits: [], misses: [] };
+
+async function fetchCache() {
+  try {
+    const resp = await fetch('/admin/v1/cache');
+    const data = await resp.json();
+
+    document.getElementById('cacheHits').textContent = formatNumber(data.hits || 0);
+    document.getElementById('cacheMisses').textContent = formatNumber(data.misses || 0);
+    const total = (data.hits || 0) + (data.misses || 0);
+    const rate = total > 0 ? Math.round(data.hits / total * 100) : 0;
+    document.getElementById('cacheHitRate').textContent = rate + '%';
+    document.getElementById('cacheSize').textContent = (data.size || 0) + ' / ' + (data.max_size || 0);
+    document.getElementById('cacheEvictions').textContent = formatNumber(data.evictions || 0);
+
+    // Update chart
+    const now = new Date().toLocaleTimeString();
+    cacheHistory.labels.push(now);
+    cacheHistory.hits.push(data.hits || 0);
+    cacheHistory.misses.push(data.misses || 0);
+    if (cacheHistory.labels.length > 20) {
+      cacheHistory.labels.shift();
+      cacheHistory.hits.shift();
+      cacheHistory.misses.shift();
+    }
+
+    if (!cacheChart2) {
+      cacheChart2 = new Chart(document.getElementById('cacheChart'), {
+        type: 'line',
+        data: {
+          labels: cacheHistory.labels,
+          datasets: [
+            { label: 'Hits', data: cacheHistory.hits, borderColor: COLORS.green, backgroundColor: COLORS.green + '20', fill: true, tension: 0.3, pointRadius: 2 },
+            { label: 'Misses', data: cacheHistory.misses, borderColor: COLORS.orange, backgroundColor: COLORS.orange + '20', fill: true, tension: 0.3, pointRadius: 2 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
+          scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#64748b', maxTicksLimit: 10 } },
+            y: { grid: { color: '#1e293b40' }, ticks: { font: { size: 10 }, color: '#64748b' } }
+          }
+        }
+      });
+    } else {
+      cacheChart2.data.labels = cacheHistory.labels;
+      cacheChart2.data.datasets[0].data = cacheHistory.hits;
+      cacheChart2.data.datasets[1].data = cacheHistory.misses;
+      cacheChart2.update('none');
+    }
+  } catch (err) { console.error('Failed to fetch cache stats', err); }
+}
+
+// Auto-refresh cache when on cache page
+setInterval(() => {
+  const cachePage = document.getElementById('page-cache');
+  if (cachePage && cachePage.style.display !== 'none') fetchCache();
+}, 3000);
 
 let feedInterval = null;
 
