@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aegisflow/aegisflow/internal/admin"
 	"github.com/aegisflow/aegisflow/internal/config"
 	"github.com/aegisflow/aegisflow/internal/provider"
+	"github.com/aegisflow/aegisflow/internal/rollout"
 	"github.com/aegisflow/aegisflow/pkg/types"
 )
 
@@ -141,5 +143,110 @@ func TestRoundRobinStrategy(t *testing.T) {
 
 	if first[0].Name() == second[0].Name() {
 		t.Error("round-robin should rotate the first provider")
+	}
+}
+
+func TestCanaryRouting(t *testing.T) {
+	registry := provider.NewRegistry()
+	registry.Register(provider.NewMockProvider("openai", 0))
+	registry.Register(provider.NewMockProvider("azure", 0))
+
+	routes := []config.RouteConfig{
+		{
+			Match:     config.RouteMatch{Model: "gpt-*"},
+			Providers: []string{"openai", "azure"},
+			Strategy:  "priority",
+		},
+	}
+
+	router := NewRouter(routes, registry)
+
+	store := rollout.NewMemoryStore()
+	reqLog := admin.NewRequestLog(100)
+	mgr, err := rollout.NewManager(store, reqLog)
+	if err != nil {
+		t.Fatalf("failed to create rollout manager: %v", err)
+	}
+
+	_, err = mgr.CreateRollout(
+		"gpt-4o",
+		[]string{"openai"},
+		"azure",
+		[]int{50},
+		5*time.Minute,
+		0.05,
+		500,
+	)
+	if err != nil {
+		t.Fatalf("failed to create rollout: %v", err)
+	}
+
+	router.SetRolloutManager(mgr)
+
+	canaryCount := 0
+	baselineCount := 0
+	total := 100
+
+	for i := 0; i < total; i++ {
+		req := &types.ChatCompletionRequest{
+			Model:    "gpt-4o",
+			Messages: []types.Message{{Role: "user", Content: "Hello"}},
+		}
+
+		result, err := router.RouteWithProvider(context.Background(), req)
+		if err != nil {
+			t.Fatalf("unexpected error on iteration %d: %v", i, err)
+		}
+
+		switch result.Provider {
+		case "azure":
+			canaryCount++
+		case "openai":
+			baselineCount++
+		default:
+			t.Fatalf("unexpected provider: %s", result.Provider)
+		}
+	}
+
+	t.Logf("canary=%d baseline=%d", canaryCount, baselineCount)
+
+	if canaryCount < 30 || canaryCount > 70 {
+		t.Errorf("expected canary count between 30-70, got %d", canaryCount)
+	}
+}
+
+func TestNoCanaryWithoutRollout(t *testing.T) {
+	registry := provider.NewRegistry()
+	registry.Register(provider.NewMockProvider("openai", 0))
+	registry.Register(provider.NewMockProvider("azure", 0))
+
+	routes := []config.RouteConfig{
+		{
+			Match:     config.RouteMatch{Model: "gpt-*"},
+			Providers: []string{"openai", "azure"},
+			Strategy:  "priority",
+		},
+	}
+
+	router := NewRouter(routes, registry)
+
+	// Do NOT set a rollout manager — normal routing should occur.
+	req := &types.ChatCompletionRequest{
+		Model:    "gpt-4o",
+		Messages: []types.Message{{Role: "user", Content: "Hello"}},
+	}
+
+	result, err := router.RouteWithProvider(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// With priority strategy and no rollout, first provider (openai) should be used.
+	if result.Provider != "openai" {
+		t.Errorf("expected provider 'openai', got %q", result.Provider)
+	}
+
+	if result.Response == nil {
+		t.Fatal("expected non-nil response")
 	}
 }
