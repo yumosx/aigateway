@@ -17,6 +17,16 @@ import (
 	"github.com/aegisflow/aegisflow/internal/usage"
 )
 
+// AnalyticsProvider is the interface consumed by the admin API to avoid an
+// import cycle with the analytics package. Use analytics.NewAdminAdapter to
+// wrap a *Collector + *AlertManager so it satisfies this interface.
+type AnalyticsProvider interface {
+	RealtimeSummary() map[string]interface{}
+	RecentAlerts(limit int) interface{}
+	AcknowledgeAlert(id string) bool
+	Dimensions() []string
+}
+
 // RolloutManager is the interface consumed by the admin API to avoid an import
 // cycle with the rollout package. Use rollout.NewAdminAdapter to wrap a
 // *rollout.Manager so it satisfies this interface.
@@ -37,12 +47,13 @@ type Server struct {
 	cfg        *config.Config
 	registry   *provider.Registry
 	requestLog *RequestLog
-	cache      cache.Cache
-	rolloutMgr RolloutManager
+	cache              cache.Cache
+	rolloutMgr         RolloutManager
+	analyticsProvider  AnalyticsProvider
 }
 
-func NewServer(tracker *usage.Tracker, cfg *config.Config, registry *provider.Registry, reqLog *RequestLog, c cache.Cache, rm RolloutManager) *Server {
-	return &Server{tracker: tracker, cfg: cfg, registry: registry, requestLog: reqLog, cache: c, rolloutMgr: rm}
+func NewServer(tracker *usage.Tracker, cfg *config.Config, registry *provider.Registry, reqLog *RequestLog, c cache.Cache, rm RolloutManager, ap AnalyticsProvider) *Server {
+	return &Server{tracker: tracker, cfg: cfg, registry: registry, requestLog: reqLog, cache: c, rolloutMgr: rm, analyticsProvider: ap}
 }
 
 func (s *Server) Router() http.Handler {
@@ -60,6 +71,12 @@ func (s *Server) Router() http.Handler {
 	r.Get("/admin/v1/cache", s.cacheHandler)
 	r.Get("/dashboard", s.dashboardHandler)
 	r.Get("/", s.dashboardHandler)
+
+	// Analytics and alerts endpoints
+	r.Get("/admin/v1/analytics", s.analyticsHandler)
+	r.Get("/admin/v1/analytics/realtime", s.analyticsRealtimeHandler)
+	r.Get("/admin/v1/alerts", s.alertsHandler)
+	r.Post("/admin/v1/alerts/{id}/acknowledge", s.alertAcknowledgeHandler)
 
 	// Rollout management endpoints
 	r.Get("/admin/v1/rollouts", s.rolloutsListHandler)
@@ -340,4 +357,60 @@ func (s *Server) rolloutRollbackHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// --- Analytics handlers ---
+
+func (s *Server) analyticsUnavailable(w http.ResponseWriter) bool {
+	if s.analyticsProvider == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "analytics not enabled"})
+		return true
+	}
+	return false
+}
+
+func (s *Server) analyticsHandler(w http.ResponseWriter, r *http.Request) {
+	if s.analyticsUnavailable(w) {
+		return
+	}
+	dims := s.analyticsProvider.Dimensions()
+	summary := s.analyticsProvider.RealtimeSummary()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"dimensions": dims,
+		"summary":    summary,
+	})
+}
+
+func (s *Server) analyticsRealtimeHandler(w http.ResponseWriter, r *http.Request) {
+	if s.analyticsUnavailable(w) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.analyticsProvider.RealtimeSummary())
+}
+
+func (s *Server) alertsHandler(w http.ResponseWriter, r *http.Request) {
+	if s.analyticsUnavailable(w) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.analyticsProvider.RecentAlerts(100))
+}
+
+func (s *Server) alertAcknowledgeHandler(w http.ResponseWriter, r *http.Request) {
+	if s.analyticsUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if s.analyticsProvider.AcknowledgeAlert(id) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "alert not found"})
+	}
 }

@@ -105,11 +105,12 @@ func main() {
 
 	// Analytics
 	var analyticsCollector *analytics.Collector
+	var alertMgr *analytics.AlertManager
 	if cfg.Analytics.Enabled {
 		analyticsCollector = analytics.NewCollector(cfg.Analytics.RetentionHours)
 
 		if cfg.Analytics.AnomalyDetection.Enabled {
-			alertMgr := analytics.NewAlertManager(wh)
+			alertMgr = analytics.NewAlertManager(wh)
 			detector := analytics.NewDetector(analyticsCollector,
 				analytics.StaticThresholds{
 					ErrorRateMax:         cfg.Analytics.AnomalyDetection.Static.ErrorRateMax,
@@ -193,8 +194,14 @@ func main() {
 		log.Printf("rollout manager started")
 	}
 
+	// Analytics admin adapter
+	var analyticsAdapter admin.AnalyticsProvider
+	if analyticsCollector != nil && alertMgr != nil {
+		analyticsAdapter = analytics.NewAdminAdapter(analyticsCollector, alertMgr)
+	}
+
 	// Admin server
-	adminSvr := admin.NewServer(ut, cfg, registry, reqLog, responseCache, rolloutAdapter)
+	adminSvr := admin.NewServer(ut, cfg, registry, reqLog, responseCache, rolloutAdapter, analyticsAdapter)
 
 	gatewayAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	adminAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.AdminPort)
