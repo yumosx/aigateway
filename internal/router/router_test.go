@@ -215,6 +215,116 @@ func TestCanaryRouting(t *testing.T) {
 	}
 }
 
+func TestRegionRouting(t *testing.T) {
+	registry := provider.NewRegistry()
+	registry.Register(provider.NewMockProvider("providerA", 0))
+	registry.Register(provider.NewMockProvider("providerB", 0))
+
+	routes := []config.RouteConfig{
+		{
+			Match:    config.RouteMatch{Model: "gpt-*"},
+			Strategy: "priority",
+			Regions: []config.RegionConfig{
+				{Name: "us", Providers: []string{"providerA"}, Strategy: "priority"},
+				{Name: "eu", Providers: []string{"providerB"}, Strategy: "priority"},
+			},
+		},
+	}
+
+	router := NewRouter(routes, registry)
+
+	req := &types.ChatCompletionRequest{
+		Model:    "gpt-4o",
+		Messages: []types.Message{{Role: "user", Content: "Hello"}},
+	}
+
+	result, err := router.RouteWithProvider(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Provider != "providerA" {
+		t.Errorf("expected provider 'providerA', got %q", result.Provider)
+	}
+	if result.Region != "us" {
+		t.Errorf("expected region 'us', got %q", result.Region)
+	}
+}
+
+func TestRegionFailover(t *testing.T) {
+	registry := provider.NewRegistry()
+	registry.Register(provider.NewMockProvider("providerA", 0))
+	registry.Register(provider.NewMockProvider("providerB", 0))
+
+	routes := []config.RouteConfig{
+		{
+			Match:    config.RouteMatch{Model: "gpt-*"},
+			Strategy: "priority",
+			Regions: []config.RegionConfig{
+				{Name: "us", Providers: []string{"providerA"}, Strategy: "priority"},
+				{Name: "eu", Providers: []string{"providerB"}, Strategy: "priority"},
+			},
+		},
+	}
+
+	router := NewRouter(routes, registry)
+
+	// Circuit-break all providers in the "us" region.
+	router.circuitBreaker.RecordFailure("providerA")
+	router.circuitBreaker.RecordFailure("providerA")
+	router.circuitBreaker.RecordFailure("providerA")
+
+	req := &types.ChatCompletionRequest{
+		Model:    "gpt-4o",
+		Messages: []types.Message{{Role: "user", Content: "Hello"}},
+	}
+
+	result, err := router.RouteWithProvider(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Provider != "providerB" {
+		t.Errorf("expected failover to 'providerB', got %q", result.Provider)
+	}
+	if result.Region != "eu" {
+		t.Errorf("expected failover to region 'eu', got %q", result.Region)
+	}
+}
+
+func TestRegionBackwardCompat(t *testing.T) {
+	registry := provider.NewRegistry()
+	registry.Register(provider.NewMockProvider("openai", 0))
+	registry.Register(provider.NewMockProvider("azure", 0))
+
+	routes := []config.RouteConfig{
+		{
+			Match:     config.RouteMatch{Model: "gpt-*"},
+			Providers: []string{"openai", "azure"},
+			Strategy:  "priority",
+		},
+	}
+
+	router := NewRouter(routes, registry)
+
+	req := &types.ChatCompletionRequest{
+		Model:    "gpt-4o",
+		Messages: []types.Message{{Role: "user", Content: "Hello"}},
+	}
+
+	result, err := router.RouteWithProvider(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Provider != "openai" {
+		t.Errorf("expected provider 'openai', got %q", result.Provider)
+	}
+	if result.Region != "" {
+		t.Errorf("expected empty region for non-region route, got %q", result.Region)
+	}
+}
+
 func TestNoCanaryWithoutRollout(t *testing.T) {
 	registry := provider.NewRegistry()
 	registry.Register(provider.NewMockProvider("openai", 0))

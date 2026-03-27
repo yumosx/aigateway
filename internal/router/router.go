@@ -14,15 +14,23 @@ import (
 	"github.com/aegisflow/aegisflow/pkg/types"
 )
 
+type Region struct {
+	Name      string
+	Providers []string
+	Strategy  Strategy
+}
+
 type Route struct {
-	Pattern    string
-	Providers  []string
-	Strategy   Strategy
+	Pattern   string
+	Providers []string
+	Strategy  Strategy
+	Regions   []Region
 }
 
 type RoutedResult struct {
 	Response *types.ChatCompletionResponse
 	Provider string
+	Region   string
 }
 
 type Router struct {
@@ -43,6 +51,13 @@ func NewRouter(cfg []config.RouteConfig, registry *provider.Registry) *Router {
 			Pattern:   rc.Match.Model,
 			Providers: rc.Providers,
 			Strategy:  NewStrategy(rc.Strategy),
+		}
+		for _, reg := range rc.Regions {
+			routes[i].Regions = append(routes[i].Regions, Region{
+				Name:      reg.Name,
+				Providers: reg.Providers,
+				Strategy:  NewStrategy(reg.Strategy),
+			})
 		}
 	}
 	return &Router{
@@ -66,6 +81,12 @@ func (r *Router) RouteWithProvider(ctx context.Context, req *types.ChatCompletio
 		if active := r.rolloutMgr.ActiveRollout(req.Model); active != nil {
 			return r.routeWithCanary(ctx, req, active)
 		}
+	}
+
+	// Check for region-based routing.
+	route := r.matchRoute(req.Model)
+	if route != nil && len(route.Regions) > 0 {
+		return r.routeWithRegions(ctx, req, route)
 	}
 
 	providers, err := r.resolveProviders(req.Model)
@@ -114,6 +135,66 @@ func (r *Router) routeWithCanary(ctx context.Context, req *types.ChatCompletionR
 	}
 
 	return r.tryProviders(ctx, req, baselineProviders)
+}
+
+func (r *Router) matchRoute(model string) *Route {
+	for i, route := range r.routes {
+		matched, _ := filepath.Match(route.Pattern, model)
+		if matched {
+			return &r.routes[i]
+		}
+	}
+	return nil
+}
+
+func (r *Router) routeWithRegions(ctx context.Context, req *types.ChatCompletionRequest, route *Route) (*RoutedResult, error) {
+	for _, region := range route.Regions {
+		var providers []provider.Provider
+		for _, name := range region.Providers {
+			p, err := r.registry.Get(name)
+			if err != nil {
+				continue
+			}
+			providers = append(providers, p)
+		}
+		if len(providers) == 0 {
+			continue
+		}
+
+		ordered := region.Strategy.Select(providers)
+
+		// Try each provider in the region; skip circuit-broken ones.
+		allBroken := true
+		var lastErr error
+		for _, p := range ordered {
+			if r.circuitBreaker.IsOpen(p.Name()) {
+				continue
+			}
+			allBroken = false
+
+			resp, err := p.ChatCompletion(ctx, req)
+			if err != nil {
+				r.circuitBreaker.RecordFailure(p.Name())
+				lastErr = err
+				continue
+			}
+
+			r.circuitBreaker.RecordSuccess(p.Name())
+			return &RoutedResult{Response: resp, Provider: p.Name(), Region: region.Name}, nil
+		}
+
+		// If all providers in this region are circuit-broken, try next region.
+		if allBroken {
+			continue
+		}
+
+		// Some providers were tried but all failed (not just circuit-broken).
+		if lastErr != nil {
+			continue // try next region
+		}
+	}
+
+	return nil, fmt.Errorf("no available providers across all regions for model %q", req.Model)
 }
 
 func (r *Router) tryProviders(ctx context.Context, req *types.ChatCompletionRequest, providers []provider.Provider) (*RoutedResult, error) {

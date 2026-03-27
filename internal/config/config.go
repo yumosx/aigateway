@@ -128,13 +128,21 @@ type ProviderConfig struct {
 	MaxRetries int              `yaml:"max_retries"`
 	APIVersion string           `yaml:"api_version"`
 	Config    map[string]string `yaml:"config"`
+	Region    string            `yaml:"region"`
+}
+
+type RegionConfig struct {
+	Name      string   `yaml:"name"`
+	Providers []string `yaml:"providers"`
+	Strategy  string   `yaml:"strategy"`
 }
 
 type RouteConfig struct {
-	Match     RouteMatch    `yaml:"match"`
-	Providers []string      `yaml:"providers"`
-	Strategy  string        `yaml:"strategy"`
-	Canary    *CanaryConfig `yaml:"canary,omitempty"`
+	Match     RouteMatch     `yaml:"match"`
+	Providers []string       `yaml:"providers"`
+	Strategy  string         `yaml:"strategy"`
+	Canary    *CanaryConfig  `yaml:"canary,omitempty"`
+	Regions   []RegionConfig `yaml:"regions,omitempty"`
 }
 
 type CanaryConfig struct {
