@@ -18,6 +18,7 @@ import (
 
 	"github.com/aegisflow/aegisflow/internal/admin"
 	"github.com/aegisflow/aegisflow/internal/analytics"
+	"github.com/aegisflow/aegisflow/internal/budget"
 	"github.com/aegisflow/aegisflow/internal/cache"
 	"github.com/aegisflow/aegisflow/internal/config"
 	"github.com/aegisflow/aegisflow/internal/gateway"
@@ -136,7 +137,47 @@ func main() {
 		log.Printf("analytics enabled (retention: %dh)", cfg.Analytics.RetentionHours)
 	}
 
-	handler := gateway.NewHandler(registry, rt, pe, ut, responseCache, wh, pgStore, analyticsCollector)
+	// Budget manager
+	var budgetMgr *budget.Manager
+	var budgetAdapter admin.BudgetProvider
+	var budgetScopes []budget.SpendScope
+	if cfg.Budgets.Enabled {
+		// Build scopes from config
+		if cfg.Budgets.Global.Monthly > 0 {
+			budgetScopes = append(budgetScopes, budget.SpendScope{
+				Scope: "global", ScopeID: "global",
+				Limit:   cfg.Budgets.Global.Monthly,
+				AlertAt: cfg.Budgets.Global.AlertAt, WarnAt: cfg.Budgets.Global.WarnAt,
+			})
+		}
+		for tenantID, tb := range cfg.Budgets.Tenants {
+			if tb.Monthly > 0 {
+				budgetScopes = append(budgetScopes, budget.SpendScope{
+					Scope: "tenant", ScopeID: tenantID,
+					Limit:   tb.Monthly,
+					AlertAt: tb.AlertAt, WarnAt: tb.WarnAt,
+				})
+			}
+			for model, mb := range tb.Models {
+				if mb.Monthly > 0 {
+					budgetScopes = append(budgetScopes, budget.SpendScope{
+						Scope: "tenant_model", ScopeID: tenantID + ":" + model,
+						Limit:   mb.Monthly,
+						AlertAt: mb.AlertAt, WarnAt: mb.WarnAt,
+					})
+				}
+			}
+		}
+		budgetMgr = budget.NewManager(budgetScopes)
+		budgetAdapter = budget.NewAdminAdapter(budgetMgr, budgetScopes)
+		log.Printf("budget manager enabled (%d scopes)", len(budgetScopes))
+	}
+
+	var recordSpendFn func(string, string, float64)
+	if budgetMgr != nil {
+		recordSpendFn = budgetMgr.RecordSpend
+	}
+	handler := gateway.NewHandler(registry, rt, pe, ut, responseCache, wh, pgStore, analyticsCollector, recordSpendFn)
 
 	// Rate limiter
 	// Use the highest tenant rate limit as the global limiter cap
@@ -167,6 +208,9 @@ func main() {
 	r.Use(middleware.Auth(cfg))
 	r.Use(middleware.RateLimit(limiter))
 	r.Use(middleware.TokenRateLimit(tokenLimiter))
+	if budgetMgr != nil {
+		r.Use(middleware.BudgetCheck(budgetMgr.CheckFunc()))
+	}
 	r.Use(middleware.Logging)
 	r.Use(middleware.Metrics)
 
@@ -201,7 +245,7 @@ func main() {
 	}
 
 	// Admin server
-	adminSvr := admin.NewServer(ut, cfg, registry, reqLog, responseCache, rolloutAdapter, analyticsAdapter, nil)
+	adminSvr := admin.NewServer(ut, cfg, registry, reqLog, responseCache, rolloutAdapter, analyticsAdapter, budgetAdapter)
 
 	gatewayAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	adminAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.AdminPort)

@@ -30,14 +30,15 @@ type Handler struct {
 	cache     cache.Cache
 	webhook   *webhook.Notifier
 	store     *storage.PostgresStore
-	dbQueue   chan storage.UsageEvent
-	analytics *analytics.Collector
+	dbQueue     chan storage.UsageEvent
+	analytics   *analytics.Collector
+	recordSpend func(tenantID, model string, cost float64)
 }
 
 const dbQueueSize = 1024
 
-func NewHandler(registry *provider.Registry, rt *router.Router, pe *policy.Engine, ut *usage.Tracker, c cache.Cache, wh *webhook.Notifier, store *storage.PostgresStore, ac *analytics.Collector) *Handler {
-	h := &Handler{registry: registry, router: rt, policy: pe, usage: ut, cache: c, webhook: wh, store: store, analytics: ac}
+func NewHandler(registry *provider.Registry, rt *router.Router, pe *policy.Engine, ut *usage.Tracker, c cache.Cache, wh *webhook.Notifier, store *storage.PostgresStore, ac *analytics.Collector, recordSpend func(string, string, float64)) *Handler {
+	h := &Handler{registry: registry, router: rt, policy: pe, usage: ut, cache: c, webhook: wh, store: store, analytics: ac, recordSpend: recordSpend}
 	if store != nil {
 		h.dbQueue = make(chan storage.UsageEvent, dbQueueSize)
 		go h.dbWorker()
@@ -152,6 +153,11 @@ func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
 		default:
 			log.Printf("db queue full — dropping usage event for tenant %s", tenantID)
 		}
+	}
+
+	// Record spend for budget tracking
+	if h.recordSpend != nil {
+		h.recordSpend(tenantID, req.Model, float64(resp.Usage.TotalTokens)*0.00001)
 	}
 
 	// Record analytics data point
