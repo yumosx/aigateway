@@ -82,9 +82,18 @@ type ProviderConfig struct {
 }
 
 type RouteConfig struct {
-	Match     RouteMatch `yaml:"match"`
-	Providers []string   `yaml:"providers"`
-	Strategy  string     `yaml:"strategy"`
+	Match     RouteMatch    `yaml:"match"`
+	Providers []string      `yaml:"providers"`
+	Strategy  string        `yaml:"strategy"`
+	Canary    *CanaryConfig `yaml:"canary,omitempty"`
+}
+
+type CanaryConfig struct {
+	TargetProvider      string        `yaml:"target_provider"`
+	Stages              []int         `yaml:"stages"`
+	ObservationWindow   time.Duration `yaml:"observation_window"`
+	ErrorThreshold      float64       `yaml:"error_threshold"`
+	LatencyP95Threshold int64         `yaml:"latency_p95_threshold"`
 }
 
 type RouteMatch struct {
