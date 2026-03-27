@@ -14,6 +14,7 @@ type RequestEntry struct {
 	TenantID   string    `json:"tenant_id"`
 	Model      string    `json:"model"`
 	Provider   string    `json:"provider,omitempty"`
+	Region     string    `json:"region,omitempty"`
 	Status     int       `json:"status"`
 	LatencyMs  int64     `json:"latency_ms"`
 	Tokens     int       `json:"tokens"`

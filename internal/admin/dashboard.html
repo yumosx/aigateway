@@ -610,6 +610,7 @@
             <th>Request ID</th>
             <th>Tenant</th>
             <th>Model</th>
+            <th>Region</th>
             <th>Status</th>
             <th>Latency</th>
             <th>Tokens</th>
@@ -1069,6 +1070,7 @@ async function fetchProviders() {
             <div>
               <div style="font-size:16px;font-weight:700;">${p.name}</div>
               <div style="font-size:11px;color:var(--text-muted);">${typeLabels[p.type] || p.type}</div>
+              ${p.region ? '<div style="font-size:10px;margin-top:2px;"><span class="badge" style="background:#6366f118;color:#6366f1;font-size:10px;">'+p.region+'</span></div>' : ''}
             </div>
           </div>
           <span class="badge" style="background:${p.enabled ? '#22c55e18' : '#ef444418'};color:${p.enabled ? COLORS.green : COLORS.red};font-weight:600;">
@@ -1259,7 +1261,7 @@ async function fetchRequests() {
 
     const tbody = document.getElementById('feedTable');
     if (total === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><p>No requests yet</p></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty-state"><p>No requests yet</p></td></tr>';
     } else {
       tbody.innerHTML = entries.map(r => {
         const time = new Date(r.timestamp).toLocaleTimeString();
@@ -1270,6 +1272,7 @@ async function fetchRequests() {
           <td style="font-size:11px;font-family:monospace;color:var(--text-muted);">${(r.request_id || '').substring(0, 12)}...</td>
           <td><span class="badge badge-tenant">${r.tenant_id || '-'}</span></td>
           <td><span class="badge ${getModelBadgeClass(r.model || '')}">${r.model || '-'}</span></td>
+          <td><span style="font-size:12px;color:var(--text-secondary);">${r.region || '-'}</span></td>
           <td><span style="color:${statusColor};font-weight:600;">${r.status}</span></td>
           <td><span style="color:${latencyColor};font-weight:500;">${r.latency_ms}ms</span></td>
           <td style="font-weight:500;">${formatNumber(r.tokens || 0)}</td>

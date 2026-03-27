@@ -123,6 +123,7 @@ func (s *Server) providersHandler(w http.ResponseWriter, r *http.Request) {
 		BaseURL string   `json:"base_url,omitempty"`
 		Models  []string `json:"models,omitempty"`
 		Healthy bool     `json:"healthy"`
+		Region  string   `json:"region,omitempty"`
 	}
 
 	var providers []providerInfo
@@ -140,6 +141,7 @@ func (s *Server) providersHandler(w http.ResponseWriter, r *http.Request) {
 			BaseURL: pc.BaseURL,
 			Models:  pc.Models,
 			Healthy: healthy,
+			Region:  pc.Region,
 		})
 	}
 
