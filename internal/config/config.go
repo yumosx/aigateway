@@ -121,11 +121,14 @@ type PoliciesConfig struct {
 }
 
 type PolicyConfig struct {
-	Name     string   `yaml:"name"`
-	Type     string   `yaml:"type"`
-	Action   string   `yaml:"action"`
-	Keywords []string `yaml:"keywords"`
-	Patterns []string `yaml:"patterns"`
+	Name     string        `yaml:"name"`
+	Type     string        `yaml:"type"`
+	Action   string        `yaml:"action"`
+	Keywords []string      `yaml:"keywords"`
+	Patterns []string      `yaml:"patterns"`
+	Path     string        `yaml:"path"`
+	Timeout  time.Duration `yaml:"timeout"`
+	OnError  string        `yaml:"on_error"`
 }
 
 type TelemetryConfig struct {
