@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -15,6 +17,18 @@ import (
 	"github.com/aegisflow/aegisflow/internal/usage"
 )
 
+// RolloutManager is the interface consumed by the admin API to avoid an import
+// cycle with the rollout package. Use rollout.NewAdminAdapter to wrap a
+// *rollout.Manager so it satisfies this interface.
+type RolloutManager interface {
+	ListRollouts() (any, error)
+	CreateRollout(routeModel string, baselineProviders []string, canaryProvider string, stages []int, observationWindow time.Duration, errorThreshold float64, latencyP95Threshold int64) (any, error)
+	GetRolloutWithMetrics(id string) (any, error)
+	PauseRollout(id string) error
+	ResumeRollout(id string) error
+	RollbackRollout(id string) error
+}
+
 //go:embed dashboard.html
 var dashboardHTML []byte
 
@@ -24,10 +38,11 @@ type Server struct {
 	registry   *provider.Registry
 	requestLog *RequestLog
 	cache      cache.Cache
+	rolloutMgr RolloutManager
 }
 
-func NewServer(tracker *usage.Tracker, cfg *config.Config, registry *provider.Registry, reqLog *RequestLog, c cache.Cache) *Server {
-	return &Server{tracker: tracker, cfg: cfg, registry: registry, requestLog: reqLog, cache: c}
+func NewServer(tracker *usage.Tracker, cfg *config.Config, registry *provider.Registry, reqLog *RequestLog, c cache.Cache, rm RolloutManager) *Server {
+	return &Server{tracker: tracker, cfg: cfg, registry: registry, requestLog: reqLog, cache: c, rolloutMgr: rm}
 }
 
 func (s *Server) Router() http.Handler {
@@ -45,6 +60,14 @@ func (s *Server) Router() http.Handler {
 	r.Get("/admin/v1/cache", s.cacheHandler)
 	r.Get("/dashboard", s.dashboardHandler)
 	r.Get("/", s.dashboardHandler)
+
+	// Rollout management endpoints
+	r.Get("/admin/v1/rollouts", s.rolloutsListHandler)
+	r.Post("/admin/v1/rollouts", s.rolloutsCreateHandler)
+	r.Get("/admin/v1/rollouts/{id}", s.rolloutGetHandler)
+	r.Post("/admin/v1/rollouts/{id}/pause", s.rolloutPauseHandler)
+	r.Post("/admin/v1/rollouts/{id}/resume", s.rolloutResumeHandler)
+	r.Post("/admin/v1/rollouts/{id}/rollback", s.rolloutRollbackHandler)
 
 	return r
 }
@@ -166,4 +189,155 @@ func (s *Server) cacheHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(dashboardHTML)
+}
+
+// --- Rollout handlers ---
+
+func (s *Server) rolloutUnavailable(w http.ResponseWriter) bool {
+	if s.rolloutMgr == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "rollout manager not available"})
+		return true
+	}
+	return false
+}
+
+func (s *Server) rolloutsListHandler(w http.ResponseWriter, r *http.Request) {
+	if s.rolloutUnavailable(w) {
+		return
+	}
+	result, err := s.rolloutMgr.ListRollouts()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	if result == nil {
+		result = []any{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+type createRolloutRequest struct {
+	RouteModel          string  `json:"route_model"`
+	CanaryProvider      string  `json:"canary_provider"`
+	Stages              []int   `json:"stages"`
+	ObservationWindow   string  `json:"observation_window"`
+	ErrorThreshold      float64 `json:"error_threshold"`
+	LatencyP95Threshold int64   `json:"latency_p95_threshold"`
+}
+
+func (s *Server) rolloutsCreateHandler(w http.ResponseWriter, r *http.Request) {
+	if s.rolloutUnavailable(w) {
+		return
+	}
+	var req createRolloutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+
+	obsWindow, err := time.ParseDuration(req.ObservationWindow)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid observation_window: " + err.Error()})
+		return
+	}
+
+	// Find baseline providers from config routes matching the model.
+	var baselineProviders []string
+	for _, route := range s.cfg.Routes {
+		if strings.EqualFold(route.Match.Model, req.RouteModel) {
+			baselineProviders = route.Providers
+			break
+		}
+	}
+
+	created, err := s.rolloutMgr.CreateRollout(
+		req.RouteModel,
+		baselineProviders,
+		req.CanaryProvider,
+		req.Stages,
+		obsWindow,
+		req.ErrorThreshold,
+		req.LatencyP95Threshold,
+	)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(created)
+}
+
+func (s *Server) rolloutGetHandler(w http.ResponseWriter, r *http.Request) {
+	if s.rolloutUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	result, err := s.rolloutMgr.GetRolloutWithMetrics(id)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) rolloutPauseHandler(w http.ResponseWriter, r *http.Request) {
+	if s.rolloutUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := s.rolloutMgr.PauseRollout(id); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (s *Server) rolloutResumeHandler(w http.ResponseWriter, r *http.Request) {
+	if s.rolloutUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := s.rolloutMgr.ResumeRollout(id); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (s *Server) rolloutRollbackHandler(w http.ResponseWriter, r *http.Request) {
+	if s.rolloutUnavailable(w) {
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := s.rolloutMgr.RollbackRollout(id); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
