@@ -374,6 +374,46 @@
     </div>
   </div>
 
+  <!-- Phase 3: Operational Status -->
+  <div class="stat-grid" style="margin-bottom: 28px;">
+    <div class="stat-card">
+      <div class="stat-glow orange"></div>
+      <div class="stat-icon orange">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      </div>
+      <div class="stat-label">Active Alerts</div>
+      <div class="stat-value" id="overviewAlerts">0</div>
+      <div class="stat-sub" id="overviewAlertDetail">No active alerts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-glow blue"></div>
+      <div class="stat-icon blue">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>
+      </div>
+      <div class="stat-label">Active Rollouts</div>
+      <div class="stat-value" id="overviewRollouts">0</div>
+      <div class="stat-sub" id="overviewRolloutDetail">No active rollouts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-glow purple"></div>
+      <div class="stat-icon purple">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      </div>
+      <div class="stat-label">Budget Status</div>
+      <div class="stat-value" id="overviewBudget">OK</div>
+      <div class="stat-sub" id="overviewBudgetDetail">All budgets within limits</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-glow green"></div>
+      <div class="stat-icon green">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+      </div>
+      <div class="stat-label">Provider Regions</div>
+      <div class="stat-value" id="overviewRegions">0</div>
+      <div class="stat-sub" id="overviewRegionDetail">No regions configured</div>
+    </div>
+  </div>
+
   <!-- Charts -->
   <div class="charts-row">
     <div class="chart-card">
@@ -1621,9 +1661,93 @@ setInterval(() => {
   if (budgetsPage && budgetsPage.style.display !== 'none') fetchBudgets();
 }, 5000);
 
+async function fetchOverviewStatus() {
+  // Alerts
+  try {
+    const alertResp = await fetch('/admin/v1/alerts');
+    const alerts = await alertResp.json();
+    const activeAlerts = (alerts || []).filter(a => a.state === 'active');
+    const critical = activeAlerts.filter(a => a.severity === 'critical').length;
+    const warnings = activeAlerts.filter(a => a.severity === 'warning').length;
+    document.getElementById('overviewAlerts').textContent = activeAlerts.length;
+    if (activeAlerts.length === 0) {
+      document.getElementById('overviewAlerts').style.color = 'var(--accent-green)';
+      document.getElementById('overviewAlertDetail').textContent = 'All clear';
+    } else if (critical > 0) {
+      document.getElementById('overviewAlerts').style.color = 'var(--accent-red)';
+      document.getElementById('overviewAlertDetail').textContent = critical + ' critical, ' + warnings + ' warning';
+    } else {
+      document.getElementById('overviewAlerts').style.color = 'var(--accent-orange)';
+      document.getElementById('overviewAlertDetail').textContent = warnings + ' warning' + (warnings !== 1 ? 's' : '');
+    }
+  } catch (e) {}
+
+  // Rollouts
+  try {
+    const rollResp = await fetch('/admin/v1/rollouts');
+    const rollouts = await rollResp.json();
+    const active = (rollouts || []).filter(r => r.state === 'running' || r.state === 'paused');
+    document.getElementById('overviewRollouts').textContent = active.length;
+    if (active.length === 0) {
+      document.getElementById('overviewRolloutDetail').textContent = 'No active rollouts';
+    } else {
+      const names = active.map(r => r.route_model + ' → ' + r.canary_provider + ' (' + r.current_percentage + '%)');
+      document.getElementById('overviewRolloutDetail').textContent = names[0];
+    }
+  } catch (e) {}
+
+  // Budgets
+  try {
+    const budgetResp = await fetch('/admin/v1/budgets');
+    const budgetData = await budgetResp.json();
+    const statuses = budgetData.statuses || budgetData || [];
+    const blocked = (Array.isArray(statuses) ? statuses : []).filter(b => b.status === 'blocked').length;
+    const warned = (Array.isArray(statuses) ? statuses : []).filter(b => b.status === 'warn' || b.status === 'alert').length;
+    if (blocked > 0) {
+      document.getElementById('overviewBudget').textContent = 'OVER';
+      document.getElementById('overviewBudget').style.color = 'var(--accent-red)';
+      document.getElementById('overviewBudgetDetail').textContent = blocked + ' budget' + (blocked > 1 ? 's' : '') + ' exhausted';
+    } else if (warned > 0) {
+      document.getElementById('overviewBudget').textContent = 'WARN';
+      document.getElementById('overviewBudget').style.color = 'var(--accent-orange)';
+      document.getElementById('overviewBudgetDetail').textContent = warned + ' budget' + (warned > 1 ? 's' : '') + ' near limit';
+    } else {
+      document.getElementById('overviewBudget').textContent = 'OK';
+      document.getElementById('overviewBudget').style.color = 'var(--accent-green)';
+      document.getElementById('overviewBudgetDetail').textContent = 'All budgets within limits';
+    }
+  } catch (e) {}
+
+  // Provider Regions
+  try {
+    const provResp = await fetch('/admin/v1/providers');
+    const providers = await provResp.json();
+    const regions = new Map();
+    for (const p of (providers || [])) {
+      const reg = p.region || 'default';
+      if (!regions.has(reg)) regions.set(reg, { total: 0, healthy: 0 });
+      regions.get(reg).total++;
+      if (p.healthy) regions.get(reg).healthy++;
+    }
+    document.getElementById('overviewRegions').textContent = regions.size;
+    if (regions.size === 0) {
+      document.getElementById('overviewRegionDetail').textContent = 'No providers configured';
+    } else {
+      const parts = [];
+      for (const [name, info] of regions) {
+        const status = info.healthy === info.total ? 'healthy' : info.healthy + '/' + info.total;
+        parts.push(name + ': ' + status);
+      }
+      document.getElementById('overviewRegionDetail').textContent = parts.join(' | ');
+    }
+  } catch (e) {}
+}
+
 initCharts();
 fetchUsage();
+fetchOverviewStatus();
 setInterval(fetchUsage, 3000);
+setInterval(fetchOverviewStatus, 3000);
 </script>
 </body>
 </html>
