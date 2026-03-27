@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegisflow-operator
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aegisflow-operator
+  template:
+    metadata:
+      labels:
+        app: aegisflow-operator
+    spec:
+      serviceAccountName: aegisflow-operator
+      containers:
+        - name: operator
+          image: aegisflow-operator:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --namespace=default
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi

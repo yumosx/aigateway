@@ -51,3 +51,16 @@ postgresql:
 serviceMonitor:
   enabled: false
   interval: 30s
+
+operator:
+  enabled: false
+  image:
+    repository: aegisflow-operator
+    tag: latest
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+crds:
+  install: true
