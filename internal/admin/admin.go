@@ -41,6 +41,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/admin/v1/tenants", s.tenantsHandler)
 	r.Get("/admin/v1/policies", s.policiesHandler)
 	r.Get("/admin/v1/requests", s.requestLog.ServeHTTP)
+	r.Get("/admin/v1/violations", s.violationsHandler)
 	r.Get("/admin/v1/cache", s.cacheHandler)
 	r.Get("/dashboard", s.dashboardHandler)
 	r.Get("/", s.dashboardHandler)
@@ -146,6 +147,11 @@ func (s *Server) policiesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(policies)
+}
+
+func (s *Server) violationsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.requestLog.RecentViolations(100))
 }
 
 func (s *Server) cacheHandler(w http.ResponseWriter, r *http.Request) {

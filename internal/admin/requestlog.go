@@ -71,6 +71,21 @@ func (rl *RequestLog) Recent(n int) []RequestEntry {
 	return result
 }
 
+// RecentViolations returns the most recent requests that triggered a policy.
+func (rl *RequestLog) RecentViolations(n int) []RequestEntry {
+	all := rl.Recent(rl.count)
+	var violations []RequestEntry
+	for _, e := range all {
+		if e.PolicyHit != "" {
+			violations = append(violations, e)
+			if len(violations) >= n {
+				break
+			}
+		}
+	}
+	return violations
+}
+
 func (rl *RequestLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rl.Recent(50))

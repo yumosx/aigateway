@@ -202,6 +202,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Live Feed
     </div>
+    <div class="nav-item" data-page="violations" onclick="switchPage('violations')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Violations
+    </div>
     <div class="nav-item" data-page="cache" onclick="switchPage('cache')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
       Cache
@@ -378,6 +382,55 @@
   <div class="page" id="page-tenants" style="display:none;">
     <div class="topbar"><h2>Tenants</h2></div>
     <div id="tenantCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:24px;"></div>
+  </div>
+
+  <!-- PAGE: Policy Violations -->
+  <div class="page" id="page-violations" style="display:none;">
+    <div class="topbar">
+      <h2>Policy Violations</h2>
+      <div class="refresh-info">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+        Auto-refresh 3s
+      </div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+      <div class="stat-card">
+        <div class="stat-glow orange"></div>
+        <div class="stat-label">Total Violations</div>
+        <div class="stat-value" id="violationTotal">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow purple"></div>
+        <div class="stat-label">Unique Policies Triggered</div>
+        <div class="stat-value" id="violationPolicies">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-glow blue"></div>
+        <div class="stat-label">Tenants Affected</div>
+        <div class="stat-value" id="violationTenants">0</div>
+      </div>
+    </div>
+    <div class="table-card">
+      <div class="table-header">
+        <span class="table-title">Recent Policy Violations</span>
+        <span class="table-count" id="violationCount">0 entries</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Policy</th>
+            <th>Tenant</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Latency</th>
+          </tr>
+        </thead>
+        <tbody id="violationTable">
+          <tr><td colspan="6" class="empty-state"><p>No policy violations recorded</p><div class="hint">Violations appear when requests trigger policy filters</div></td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- PAGE: Cache Stats -->
@@ -686,6 +739,7 @@ function switchPage(page) {
   if (page === 'tenants') fetchTenants();
   if (page === 'requests') fetchRequests();
   if (page === 'cache') fetchCache();
+  if (page === 'violations') fetchViolations();
 }
 
 async function fetchPolicies() {
@@ -799,6 +853,44 @@ async function fetchTenants() {
     }).join('');
   } catch (err) { console.error('Failed to fetch tenants', err); }
 }
+
+async function fetchViolations() {
+  try {
+    const resp = await fetch('/admin/v1/violations');
+    const data = await resp.json();
+    const entries = data || [];
+
+    document.getElementById('violationTotal').textContent = entries.length;
+    const policies = new Set(entries.map(e => e.policy_hit));
+    document.getElementById('violationPolicies').textContent = policies.size;
+    const tenants = new Set(entries.map(e => e.tenant_id));
+    document.getElementById('violationTenants').textContent = tenants.size;
+    document.getElementById('violationCount').textContent = entries.length + ' entries';
+
+    const tbody = document.getElementById('violationTable');
+    if (entries.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><p>No policy violations recorded</p></td></tr>';
+    } else {
+      tbody.innerHTML = entries.map(r => {
+        const time = new Date(r.timestamp).toLocaleTimeString();
+        const statusColor = r.status === 403 ? 'var(--accent-red)' : 'var(--accent-orange)';
+        return `<tr>
+          <td style="font-size:12px;color:var(--text-muted);white-space:nowrap;">${time}</td>
+          <td><span class="badge" style="background:#ef444418;color:var(--accent-red);font-weight:600;">${r.policy_hit}</span></td>
+          <td><span class="badge badge-tenant">${r.tenant_id || '-'}</span></td>
+          <td><span class="badge ${getModelBadgeClass(r.model || '')}">${r.model || '-'}</span></td>
+          <td><span style="color:${statusColor};font-weight:600;">${r.status}</span></td>
+          <td><span style="color:var(--text-muted);">${r.latency_ms}ms</span></td>
+        </tr>`;
+      }).join('');
+    }
+  } catch (err) { console.error('Failed to fetch violations', err); }
+}
+
+setInterval(() => {
+  const vPage = document.getElementById('page-violations');
+  if (vPage && vPage.style.display !== 'none') fetchViolations();
+}, 3000);
 
 let cacheChart2 = null;
 const cacheHistory = { labels: [], hits: [], misses: [] };
