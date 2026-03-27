@@ -29,10 +29,28 @@ type Handler struct {
 	cache    cache.Cache
 	webhook  *webhook.Notifier
 	store    *storage.PostgresStore
+	dbQueue  chan storage.UsageEvent
 }
 
+const dbQueueSize = 1024
+
 func NewHandler(registry *provider.Registry, rt *router.Router, pe *policy.Engine, ut *usage.Tracker, c cache.Cache, wh *webhook.Notifier, store *storage.PostgresStore) *Handler {
-	return &Handler{registry: registry, router: rt, policy: pe, usage: ut, cache: c, webhook: wh, store: store}
+	h := &Handler{registry: registry, router: rt, policy: pe, usage: ut, cache: c, webhook: wh, store: store}
+	if store != nil {
+		h.dbQueue = make(chan storage.UsageEvent, dbQueueSize)
+		go h.dbWorker()
+	}
+	return h
+}
+
+// dbWorker drains the queue and writes events to the database sequentially,
+// preventing unbounded goroutine growth when the DB is slow.
+func (h *Handler) dbWorker() {
+	for event := range h.dbQueue {
+		if err := h.store.RecordEvent(context.Background(), event); err != nil {
+			log.Printf("db worker: failed to record event: %v", err)
+		}
+	}
 }
 
 func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
@@ -118,14 +136,18 @@ func (h *Handler) ChatCompletion(w http.ResponseWriter, r *http.Request) {
 		h.usage.Record(tenantID, req.Model, resp.Usage)
 	}
 
-	// Persist to database (use background context since request context will be cancelled)
-	if h.store != nil {
-		go h.store.RecordEvent(context.Background(), storage.UsageEvent{
+	// Persist to database via buffered worker queue (non-blocking)
+	if h.dbQueue != nil {
+		select {
+		case h.dbQueue <- storage.UsageEvent{
 			TenantID: tenantID, Model: req.Model,
 			PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens,
 			TotalTokens: resp.Usage.TotalTokens, StatusCode: 200,
 			LatencyMs: time.Since(startTime).Milliseconds(), CreatedAt: time.Now(),
-		})
+		}:
+		default:
+			log.Printf("db queue full — dropping usage event for tenant %s", tenantID)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
