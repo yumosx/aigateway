@@ -13,10 +13,16 @@ import (
 type contextKey string
 
 const TenantContextKey contextKey = "tenant"
+const RoleContextKey contextKey = "role"
 
 func TenantFromContext(ctx context.Context) *config.TenantConfig {
 	t, _ := ctx.Value(TenantContextKey).(*config.TenantConfig)
 	return t
+}
+
+func RoleFromContext(ctx context.Context) string {
+	role, _ := ctx.Value(RoleContextKey).(string)
+	return role
 }
 
 func Auth(cfg *config.Config) func(http.Handler) http.Handler {
@@ -45,6 +51,7 @@ func Auth(cfg *config.Config) func(http.Handler) http.Handler {
 			}
 
 			ctx := context.WithValue(r.Context(), TenantContextKey, match.Tenant)
+			ctx = context.WithValue(ctx, RoleContextKey, match.Role)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
