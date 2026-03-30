@@ -27,6 +27,26 @@ type Config struct {
 	Transform TransformConfig  `yaml:"transform"`
 	Analytics AnalyticsConfig  `yaml:"analytics"`
 	Budgets   BudgetsConfig    `yaml:"budgets"`
+	Eval      EvalConfig       `yaml:"eval"`
+}
+
+type EvalConfig struct {
+	Enabled bool              `yaml:"enabled"`
+	Builtin BuiltinEvalConfig `yaml:"builtin"`
+	Webhook WebhookEvalConfig `yaml:"webhook"`
+}
+
+type BuiltinEvalConfig struct {
+	Enabled           bool    `yaml:"enabled"`
+	MinResponseTokens int     `yaml:"min_response_tokens"`
+	LatencyMultiplier float64 `yaml:"latency_multiplier"`
+}
+
+type WebhookEvalConfig struct {
+	URL             string        `yaml:"url"`
+	SampleRate      float64       `yaml:"sample_rate"`
+	Timeout         time.Duration `yaml:"timeout"`
+	SendFullContent bool          `yaml:"send_full_content"`
 }
 
 type CacheConfig struct {
@@ -351,6 +371,17 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Budgets.Global.WarnAt == 0 {
 		cfg.Budgets.Global.WarnAt = 90
+	}
+
+	// Eval defaults
+	if cfg.Eval.Builtin.MinResponseTokens == 0 {
+		cfg.Eval.Builtin.MinResponseTokens = 10
+	}
+	if cfg.Eval.Builtin.LatencyMultiplier == 0 {
+		cfg.Eval.Builtin.LatencyMultiplier = 2.0
+	}
+	if cfg.Eval.Webhook.Timeout == 0 {
+		cfg.Eval.Webhook.Timeout = 5 * time.Second
 	}
 
 	// CORS defaults
