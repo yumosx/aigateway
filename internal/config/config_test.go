@@ -70,23 +70,190 @@ tenants:
 func TestFindTenantByAPIKey(t *testing.T) {
 	cfg := &Config{
 		Tenants: []TenantConfig{
-			{ID: "t1", APIKeys: []string{"key-a", "key-b"}},
-			{ID: "t2", APIKeys: []string{"key-c"}},
+			{ID: "t1", APIKeys: []APIKeyEntry{{Key: "key-a", Role: "operator"}, {Key: "key-b", Role: "operator"}}},
+			{ID: "t2", APIKeys: []APIKeyEntry{{Key: "key-c", Role: "operator"}}},
 		},
 	}
 
-	tenant := cfg.FindTenantByAPIKey("key-b")
-	if tenant == nil || tenant.ID != "t1" {
-		t.Errorf("expected tenant t1, got %v", tenant)
+	match := cfg.FindTenantByAPIKey("key-b")
+	if match == nil || match.Tenant.ID != "t1" {
+		t.Errorf("expected tenant t1, got %v", match)
 	}
 
-	tenant = cfg.FindTenantByAPIKey("key-c")
-	if tenant == nil || tenant.ID != "t2" {
-		t.Errorf("expected tenant t2, got %v", tenant)
+	match = cfg.FindTenantByAPIKey("key-c")
+	if match == nil || match.Tenant.ID != "t2" {
+		t.Errorf("expected tenant t2, got %v", match)
 	}
 
-	tenant = cfg.FindTenantByAPIKey("nonexistent")
-	if tenant != nil {
-		t.Errorf("expected nil for nonexistent key, got %v", tenant)
+	match = cfg.FindTenantByAPIKey("nonexistent")
+	if match != nil {
+		t.Errorf("expected nil for nonexistent key, got %v", match)
+	}
+}
+
+func TestAPIKeyEntryNewFormat(t *testing.T) {
+	yamlData := `
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+    api_keys:
+      - key: "admin-key"
+        role: "admin"
+      - key: "viewer-key"
+        role: "viewer"
+`
+	f, err := os.CreateTemp("", "aegisflow-newformat-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(yamlData)
+	f.Close()
+
+	cfg, err := Load(f.Name())
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	if len(cfg.Tenants) != 1 {
+		t.Fatalf("expected 1 tenant, got %d", len(cfg.Tenants))
+	}
+	keys := cfg.Tenants[0].APIKeys
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 api keys, got %d", len(keys))
+	}
+	if keys[0].Key != "admin-key" || keys[0].Role != "admin" {
+		t.Errorf("expected {admin-key, admin}, got {%s, %s}", keys[0].Key, keys[0].Role)
+	}
+	if keys[1].Key != "viewer-key" || keys[1].Role != "viewer" {
+		t.Errorf("expected {viewer-key, viewer}, got {%s, %s}", keys[1].Key, keys[1].Role)
+	}
+}
+
+func TestAPIKeyEntryOldFormat(t *testing.T) {
+	yamlData := `
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+    api_keys:
+      - "plain-key-1"
+      - "plain-key-2"
+`
+	f, err := os.CreateTemp("", "aegisflow-oldformat-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(yamlData)
+	f.Close()
+
+	cfg, err := Load(f.Name())
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	keys := cfg.Tenants[0].APIKeys
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 api keys, got %d", len(keys))
+	}
+	if keys[0].Key != "plain-key-1" || keys[0].Role != "operator" {
+		t.Errorf("expected {plain-key-1, operator}, got {%s, %s}", keys[0].Key, keys[0].Role)
+	}
+	if keys[1].Key != "plain-key-2" || keys[1].Role != "operator" {
+		t.Errorf("expected {plain-key-2, operator}, got {%s, %s}", keys[1].Key, keys[1].Role)
+	}
+}
+
+func TestAPIKeyEntryMixedFormat(t *testing.T) {
+	yamlData := `
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+    api_keys:
+      - "plain-key"
+      - key: "structured-key"
+        role: "admin"
+`
+	f, err := os.CreateTemp("", "aegisflow-mixed-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(yamlData)
+	f.Close()
+
+	cfg, err := Load(f.Name())
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	keys := cfg.Tenants[0].APIKeys
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 api keys, got %d", len(keys))
+	}
+	if keys[0].Key != "plain-key" || keys[0].Role != "operator" {
+		t.Errorf("expected {plain-key, operator}, got {%s, %s}", keys[0].Key, keys[0].Role)
+	}
+	if keys[1].Key != "structured-key" || keys[1].Role != "admin" {
+		t.Errorf("expected {structured-key, admin}, got {%s, %s}", keys[1].Key, keys[1].Role)
+	}
+}
+
+func TestAPIKeyEntryDefaultRole(t *testing.T) {
+	yamlData := `
+tenants:
+  - id: "t1"
+    name: "Tenant 1"
+    api_keys:
+      - key: "no-role-key"
+`
+	f, err := os.CreateTemp("", "aegisflow-defaultrole-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(yamlData)
+	f.Close()
+
+	cfg, err := Load(f.Name())
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+	keys := cfg.Tenants[0].APIKeys
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 api key, got %d", len(keys))
+	}
+	if keys[0].Key != "no-role-key" || keys[0].Role != "operator" {
+		t.Errorf("expected {no-role-key, operator}, got {%s, %s}", keys[0].Key, keys[0].Role)
+	}
+}
+
+func TestFindTenantByAPIKeyReturnsRole(t *testing.T) {
+	cfg := &Config{
+		Tenants: []TenantConfig{
+			{
+				ID: "t1",
+				APIKeys: []APIKeyEntry{
+					{Key: "op-key", Role: "operator"},
+					{Key: "admin-key", Role: "admin"},
+				},
+			},
+		},
+	}
+
+	match := cfg.FindTenantByAPIKey("op-key")
+	if match == nil {
+		t.Fatal("expected match, got nil")
+	}
+	if match.Role != "operator" {
+		t.Errorf("expected role operator, got %s", match.Role)
+	}
+
+	match = cfg.FindTenantByAPIKey("admin-key")
+	if match == nil {
+		t.Fatal("expected match, got nil")
+	}
+	if match.Role != "admin" {
+		t.Errorf("expected role admin, got %s", match.Role)
+	}
+	if match.Tenant.ID != "t1" {
+		t.Errorf("expected tenant t1, got %s", match.Tenant.ID)
 	}
 }

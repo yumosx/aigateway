@@ -36,15 +36,15 @@ func Auth(cfg *config.Config) func(http.Handler) http.Handler {
 				return
 			}
 
-			tenant := cfg.FindTenantByAPIKey(apiKey)
-			if tenant == nil {
+			match := cfg.FindTenantByAPIKey(apiKey)
+			if match == nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(types.NewErrorResponse(401, "authentication_error", "invalid API key"))
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), TenantContextKey, tenant)
+			ctx := context.WithValue(r.Context(), TenantContextKey, match.Tenant)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

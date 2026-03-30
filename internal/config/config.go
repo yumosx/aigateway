@@ -169,10 +169,40 @@ type RouteMatch struct {
 	Model string `yaml:"model"`
 }
 
+type APIKeyEntry struct {
+	Key  string `json:"key"  yaml:"key"`
+	Role string `json:"role" yaml:"role"`
+}
+
+// UnmarshalYAML handles both plain string ("key-value") and object ({key: "x", role: "admin"}) formats.
+func (e *APIKeyEntry) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		e.Key = value.Value
+		e.Role = "operator"
+		return nil
+	}
+	type plain APIKeyEntry
+	var p plain
+	if err := value.Decode(&p); err != nil {
+		return err
+	}
+	e.Key = p.Key
+	e.Role = p.Role
+	if e.Role == "" {
+		e.Role = "operator"
+	}
+	return nil
+}
+
+type TenantMatch struct {
+	Tenant *TenantConfig
+	Role   string
+}
+
 type TenantConfig struct {
 	ID            string          `yaml:"id"`
 	Name          string          `yaml:"name"`
-	APIKeys       []string        `yaml:"api_keys"`
+	APIKeys       []APIKeyEntry   `yaml:"api_keys"`
 	RateLimit     TenantRateLimit `yaml:"rate_limit"`
 	AllowedModels []string        `yaml:"allowed_models"`
 }
@@ -340,16 +370,19 @@ func setDefaults(cfg *Config) {
 	}
 }
 
-func (c *Config) FindTenantByAPIKey(apiKey string) *TenantConfig {
+func (c *Config) FindTenantByAPIKey(apiKey string) *TenantMatch {
 	// Use constant-time comparison to prevent timing attacks.
 	// Hash both sides so length differences don't leak info.
 	inputHash := sha256.Sum256([]byte(apiKey))
-	var match *TenantConfig
+	var match *TenantMatch
 	for i := range c.Tenants {
-		for _, key := range c.Tenants[i].APIKeys {
-			keyHash := sha256.Sum256([]byte(key))
+		for _, entry := range c.Tenants[i].APIKeys {
+			keyHash := sha256.Sum256([]byte(entry.Key))
 			if subtle.ConstantTimeCompare(inputHash[:], keyHash[:]) == 1 {
-				match = &c.Tenants[i]
+				match = &TenantMatch{
+					Tenant: &c.Tenants[i],
+					Role:   entry.Role,
+				}
 			}
 		}
 	}

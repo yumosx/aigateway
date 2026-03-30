@@ -110,10 +110,14 @@ func BuildConfig(gw GatewayInput, providers []ProviderInput, routes []RouteInput
 
 	// Tenants
 	for _, t := range tenants {
+		apiKeys := make([]config.APIKeyEntry, len(t.APIKeys))
+		for j, k := range t.APIKeys {
+			apiKeys[j] = config.APIKeyEntry{Key: k, Role: "operator"}
+		}
 		cfg.Tenants = append(cfg.Tenants, config.TenantConfig{
 			ID:      t.ID,
 			Name:    t.Name,
-			APIKeys: t.APIKeys,
+			APIKeys: apiKeys,
 			RateLimit: config.TenantRateLimit{
 				RequestsPerMinute: t.RequestsPerMinute,
 				TokensPerMinute:   t.TokensPerMinute,
