@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
 )
 
 // ---------------------------------------------------------------------------
@@ -175,5 +177,84 @@ func TestNewRedisLimiterFailsWithBadAddress(t *testing.T) {
 	_, err := NewRedisLimiter("localhost:1", "", 0, 10, time.Minute)
 	if err == nil {
 		t.Fatal("expected error when connecting to nonexistent Redis")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Redis limiter: functional tests using miniredis
+// ---------------------------------------------------------------------------
+
+func TestRedisLimiterAllowAndDeny(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+
+	limiter, err := NewRedisLimiter(mr.Addr(), "", 0, 5, time.Minute)
+	if err != nil {
+		t.Fatalf("failed to create redis limiter: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		allowed, err := limiter.Allow("test-key", 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !allowed {
+			t.Errorf("request %d should be allowed", i)
+		}
+	}
+
+	allowed, err := limiter.Allow("test-key", 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if allowed {
+		t.Error("6th request should be denied (limit is 5)")
+	}
+}
+
+func TestRedisLimiterSeparateKeys(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+
+	limiter, err := NewRedisLimiter(mr.Addr(), "", 0, 2, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	limiter.Allow("key-a", 2)
+	limiter.Allow("key-b", 1)
+
+	allowed, _ := limiter.Allow("key-a", 1)
+	if allowed {
+		t.Error("key-a should be exhausted")
+	}
+
+	allowed, _ = limiter.Allow("key-b", 1)
+	if !allowed {
+		t.Error("key-b should still have budget")
+	}
+}
+
+func TestRedisLimiterCostGreaterThanLimit(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+
+	limiter, err := NewRedisLimiter(mr.Addr(), "", 0, 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowed, _ := limiter.Allow("k", 11)
+	if allowed {
+		t.Error("cost exceeding limit should be denied")
 	}
 }
