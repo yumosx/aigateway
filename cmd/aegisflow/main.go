@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -39,6 +40,8 @@ import (
 )
 
 const version = "v0.4.0"
+
+var totalRequests uint64
 
 func main() {
 	configPath := flag.String("config", "configs/aegisflow.yaml", "path to config file")
@@ -213,8 +216,6 @@ func main() {
 		log.Printf("eval hooks enabled (builtin: %v, webhook: %v)", cfg.Eval.Builtin.Enabled, cfg.Eval.Webhook.URL != "")
 	}
 
-
-
 	// Rate limiter
 	// Use the highest tenant rate limit as the global limiter cap
 	maxRPM := 60
@@ -236,6 +237,12 @@ func main() {
 
 	// Gateway router
 	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddUint64(&totalRequests, 1)
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(chimw.RequestID)
 	// RealIP trusts X-Forwarded-For/X-Real-IP headers.
 	// In production, ensure only your reverse proxy (nginx, ALB, etc.) sets these.
@@ -382,7 +389,8 @@ func main() {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"ok"}`))
+	n := atomic.LoadUint64(&totalRequests)
+	fmt.Fprintf(w, `{"status":"ok","requests":%d}`, n)
 }
 
 func initProviders(cfg *config.Config, registry *provider.Registry) {
