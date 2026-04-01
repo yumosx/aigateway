@@ -20,6 +20,7 @@ type RequestEntry struct {
 	Tokens     int       `json:"tokens"`
 	Cached     bool      `json:"cached"`
 	PolicyHit  string    `json:"policy_hit,omitempty"`
+	QualityScore int     `json:"quality_score"`
 }
 
 // RequestLog is a thread-safe ring buffer that stores recent requests for the live feed.
