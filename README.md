@@ -49,11 +49,10 @@ No cloud account or provider key is required.
 ```bash
 git clone https://github.com/saivedant169/AegisFlow.git
 cd AegisFlow
-./scripts/quickstart.sh
-./scripts/demo.sh
+make demo-local
 ```
 
-The demo starts AegisFlow with the mock provider and local policy config. It exercises allowed actions, blocked actions, human review, audit verification, and the admin dashboard.
+The demo starts AegisFlow with the mock provider and local policy config. It exercises an OpenAI-compatible chat request, policy blocking, Prometheus metrics, and the admin dashboard.
 
 ![AegisFlow demo](demo.gif)
 
@@ -188,9 +187,7 @@ type ActionEnvelope struct {
 ```bash
 git clone https://github.com/saivedant169/AegisFlow.git
 cd AegisFlow
-./scripts/quickstart.sh
-# Then in another terminal:
-./scripts/demo.sh
+make demo-local
 ```
 
 ### Option 1: Docker Compose
@@ -261,6 +258,23 @@ To run with Docker instead:
 
 ```bash
 docker compose -f deployments/docker-compose.demo.yaml up --build
+```
+
+### Cost-free examples
+
+The [`examples`](examples/README.md) directory includes local-only configs and requests:
+
+- `examples/configs/single-tenant.yaml`
+- `examples/configs/multi-tenant.yaml`
+- `examples/configs/policy-blocking.yaml`
+- `examples/requests/openai-compatible-curl.sh`
+
+Run an example config:
+
+```bash
+make build
+./bin/aegisflow --config examples/configs/single-tenant.yaml
+./examples/requests/openai-compatible-curl.sh
 ```
 
 ### Real-world MCP testing

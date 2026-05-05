@@ -7,11 +7,21 @@
 
 ## Quick Start
 
-### Option 1: Build from Source
+### Option 1: One-Command Local Demo
 
 ```bash
-git clone https://github.com/aegisflow/aegisflow.git
-cd aegisflow
+git clone https://github.com/saivedant169/AegisFlow.git
+cd AegisFlow
+make demo-local
+```
+
+This runs with the mock provider and does not require any paid service or provider key.
+
+### Option 2: Build from Source
+
+```bash
+git clone https://github.com/saivedant169/AegisFlow.git
+cd AegisFlow
 
 # Build
 make build
@@ -20,11 +30,11 @@ make build
 make run
 ```
 
-### Option 2: Docker Compose
+### Option 3: Docker Compose
 
 ```bash
-git clone https://github.com/aegisflow/aegisflow.git
-cd aegisflow
+git clone https://github.com/saivedant169/AegisFlow.git
+cd AegisFlow
 
 docker compose -f deployments/docker-compose.yaml up --build
 ```
@@ -67,6 +77,8 @@ print(response.choices[0].message.content)
 
 ## Connecting a Real Provider
 
+Real providers are optional. The mock provider remains the default path for free demos, local development, and CI.
+
 Edit `configs/aegisflow.yaml` to enable a provider:
 
 ```yaml
@@ -99,11 +111,26 @@ Now requests for configured OpenAI-backed models will route to OpenAI with autom
 ## Running the Demo
 
 ```bash
-chmod +x scripts/demo.sh
-./scripts/demo.sh
+make demo-local
 ```
 
 This exercises all major features: health check, chat completion, streaming, policy blocking, auth, and usage tracking.
+
+## Local Example Configs
+
+The `examples/configs` directory includes copy-pasteable setups that use only the mock provider:
+
+- `single-tenant.yaml`
+- `multi-tenant.yaml`
+- `policy-blocking.yaml`
+
+Run one:
+
+```bash
+make build
+./bin/aegisflow --config examples/configs/single-tenant.yaml
+./examples/requests/openai-compatible-curl.sh
+```
 
 ## Next Steps
 

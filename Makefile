@@ -1,4 +1,4 @@
-.PHONY: build run test lint vuln fmt fmt-check docker-build docker-up smoke benchmark clean
+.PHONY: build run test lint vuln fmt fmt-check docker-build docker-up demo-local smoke benchmark clean
 
 BINARY=aegisflow
 CONFIG=configs/aegisflow.yaml
@@ -36,6 +36,9 @@ docker-build:
 
 docker-up:
 	docker compose -f deployments/docker-compose.yaml up --build
+
+demo-local:
+	bash scripts/local_demo.sh
 
 smoke:
 	bash scripts/compose_smoke.sh
