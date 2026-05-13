@@ -1,10 +1,12 @@
-FROM golang:1.26.3-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.3-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o aegisflow ./cmd/aegisflow
-RUN CGO_ENABLED=0 go build -o aegisctl ./cmd/aegisctl
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -o aegisflow ./cmd/aegisflow
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -o aegisctl ./cmd/aegisctl
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates curl jq bash
